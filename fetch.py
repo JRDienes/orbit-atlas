@@ -62,7 +62,7 @@ def fetch_and_store():
     batch_size = 500
     for i in range(0, len(records), batch_size):
         batch = records[i:i + batch_size]
-        supabase.table("satellites").upsert(batch).execute()
+        supabase.table("satellites").upsert(batch, on_conflict="norad_cat_id").execute()
         print(f"Uploaded rows {i} to {i + len(batch)}")
 
     print("Done! All objects saved to Supabase.")
