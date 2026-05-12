@@ -1,6 +1,6 @@
 # 🛰️ Orbit Atlas
  
-> A real-time 3D space object tracking and visualization system built with React, Three.js, and a live Space Force data pipeline.
+> A real-time 3D space object tracking system built with React, Three.js, and a live Space Force data pipeline.
  
 ![Orbit Atlas](https://img.shields.io/badge/status-in%20development-00d4ff?style=flat-square&labelColor=020818)
 ![React](https://img.shields.io/badge/React-19-00d4ff?style=flat-square&labelColor=020818)
@@ -71,77 +71,32 @@ Space-Track.org API (U.S. Space Force)
  
 ## 🚧 Roadmap
  
-### 🌐 Globe & Visualization
+### Performance
+- [ ] Switch to full 27,000+ object rendering (debris included)
+- [ ] Debris layer as separate toggle — dimmer, smaller points
+- [ ] Level of detail (LOD) — fewer points when zoomed out
+### Orbital Mechanics
 - [ ] Real TLE-based positioning using satellite.js
 - [ ] Real-time orbital propagation (update positions every 30s)
 - [ ] Orbit ring visualization on satellite click
 - [ ] Category orbit rings — click SpaceX to see all Starlink orbits
-- [ ] Debris layer as separate toggle — dimmer, smaller points
-- [ ] Level of detail (LOD) — fewer points when zoomed out
-- [ ] Full 27,000+ object rendering including debris
-### 🛰️ Satellite Detail & Interaction
-- [ ] Click satellite → slide-in detail panel (name, type, country, orbit stats)
-- [ ] Search bar to find satellite by name or NORAD ID
+### UI / UX
+- [ ] Click satellite → detail panel (name, type, country, orbit stats)
+- [ ] Search bar to find a specific satellite by name or NORAD ID
+- [ ] Satellite count breakdown per organization in sidebar
 - [ ] Animated satellite movement along orbital paths
 - [ ] Mobile touch support (pinch to zoom, drag to rotate)
-### 🔭 Space Telescopes
-- [ ] Highlight space telescopes as a dedicated category (Hubble, James Webb, Chandra, Spitzer, Kepler, TESS, Roman)
-- [ ] Telescope detail panel — mission info, launch date, orbit type, imagery
-- [ ] Animated orbit rings for telescope orbits (JWST is at L2, unique path)
-- [ ] Show field of view cone for active telescopes like JWST
-### 🚀 Launch Trajectories
-- [ ] Click a satellite → animated launch trajectory from launch site to orbit
-- [ ] Accurate Falcon 9 ascent profile for Starlink launches
-- [ ] Historic mission trajectories — Apollo, Artemis, Voyager, New Horizons
-- [ ] Starlink batch deploy animation — fairing separation, stack release
-- [ ] Launch site markers on globe (Kennedy, Vandenberg, Baikonur, etc.)
-### ⏳ Time Machine
-- [ ] Year selector dropdown (1957 — present)
-- [ ] Globe shows only satellites active in selected year
-- [ ] Animated timelapse — watch orbital shell fill up year by year
-- [ ] Sputnik 1957 → Starlink era dramatic growth visualization
-- [ ] Launch history bar chart by year in sidebar
-### 🌍 ISS Live Tracker
-- [ ] Real-time ISS position updating every 5 seconds
-- [ ] Unique ISS icon on globe
-- [ ] Crew manifest panel — current astronauts aboard
-- [ ] ISS live video feed embed
-- [ ] Ground track projection — show where ISS is heading
-- [ ] Pass prediction — when will ISS fly over your location
-### ⚠️ Conjunction & Reentry Alerts
-- [ ] Near-miss/conjunction alerts from Space-Track CDM feed
-- [ ] Highlighted close approach pairs on globe
-- [ ] Alert panel with distance, time, probability
-- [ ] Decay/reentry predictions with countdown timers
-- [ ] Reentry risk map — show predicted impact zones
-### 🛸 Constellation Trackers
-- [ ] Amazon Kuiper constellation — live growth tracker
-- [ ] AST SpaceMobile constellation tracker
-- [ ] OneWeb constellation
-- [ ] Watch each constellation grow in real time as launches occur
-- [ ] Constellation coverage map — show ground coverage footprint
-### 🪐 Solar System Mode
-- [ ] Expand view beyond Earth orbit to show full solar system
-- [ ] Planets rendered to scale with accurate orbital positions
-- [ ] Active deep space probes (Voyager 1 & 2, New Horizons, Parker Solar Probe)
-- [ ] Asteroid belt visualization
-- [ ] Switch between Earth orbit mode and solar system mode
-- [ ] Mars missions — show active orbiters (MAVEN, MRO, Hope, Tianwen)
-### 📊 Data & Backend
+### Data & Backend
 - [ ] Enable Supabase Row Level Security (RLS) before public launch
-- [ ] Second PostgreSQL database for user data and saved views
-- [ ] User accounts — save favorite satellites, custom filters
-- [ ] Satellite alerts — notify when a specific satellite passes overhead
-- [ ] NASA APIs integration — mission data, crew info, imagery
-- [ ] N2YO API — pass predictions over user location
-- [ ] Launch schedule feed — upcoming launches with countdown timers
-### ✨ Polish
+- [ ] Add debris to database with separate rendering pipeline
+- [ ] Historical launch date timeline slider
+- [ ] Filter by object type (payload, rocket body, debris)
+- [ ] Link second PostgreSQL database for user data / saved views
+### Polish
 - [ ] Custom domain
-- [ ] Loading screen with animated progress bar
-- [ ] About panel explaining the data source and methodology
+- [ ] Loading screen with progress bar
+- [ ] About panel explaining the data source
 - [ ] Share a specific satellite view via URL
-- [ ] Embed mode — shareable iframe for specific satellites
-- [ ] Dark/light mode toggle (light = daytime Earth texture)
 ---
  
 ## 🛠️ Tech Stack
@@ -154,7 +109,6 @@ Space-Track.org API (U.S. Space Force)
 | Data Pipeline | Python 3.11, requests, python-dotenv |
 | Scheduling | GitHub Actions (weekly cron) |
 | Deployment | Vercel |
-| Analytics | Vercel Web Analytics |
 | Data Source | Space-Track.org (U.S. Space Force) |
  
 ---
@@ -203,13 +157,9 @@ npm start
  
 ---
  
-## 📊 Data Sources
+## 📊 Data Source
  
-| Source | Data | Update Frequency |
-|---|---|---|
-| Space-Track.org (U.S. Space Force) | All tracked orbital objects, TLE data, conjunction data | Weekly |
-| NASA APIs | Mission data, crew info, imagery | On demand |
-| N2YO API | Real-time positions, pass predictions | Real-time |
+All orbital data sourced from **[Space-Track.org](https://www.space-track.org)**, operated by the U.S. Space Force 18th Space Defense Squadron. Data is updated weekly and includes General Perturbations (GP) element sets for all tracked objects in Earth orbit.
  
 ---
  
