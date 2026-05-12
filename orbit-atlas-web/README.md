@@ -1,70 +1,168 @@
-# Getting Started with Create React App
-
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
-
-## Available Scripts
-
-In the project directory, you can run:
-
-### `npm start`
-
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
-
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
-
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+# 🛰️ Orbit Atlas
+ 
+> A real-time 3D space object tracking system built with React, Three.js, and a live Space Force data pipeline.
+ 
+![Orbit Atlas](https://img.shields.io/badge/status-in%20development-00d4ff?style=flat-square&labelColor=020818)
+![React](https://img.shields.io/badge/React-19-00d4ff?style=flat-square&labelColor=020818)
+![Three.js](https://img.shields.io/badge/Three.js-r128-00ff88?style=flat-square&labelColor=020818)
+![Supabase](https://img.shields.io/badge/Supabase-Postgres-00d4ff?style=flat-square&labelColor=020818)
+ 
+---
+ 
+## 🌍 Live Demo
+ 
+**[orbit-atlas.vercel.app](https://orbit-atlas.vercel.app)**
+ 
+---
+ 
+## 📡 What It Does
+ 
+Orbit Atlas visualizes every tracked object in Earth's orbit in real time on an interactive 3D globe. Data is pulled directly from the U.S. Space Force's Space-Track API, stored in a PostgreSQL database, and rendered using Three.js with color-coded filtering by organization.
+ 
+- **27,000+ tracked objects** including active satellites, rocket bodies, and debris
+- **Filter by organization** — SpaceX/Starlink, DOD/Military, Russia, China, UK, and others
+- **Dynamic object count** updates based on active filters
+- **High-tech military aesthetic** — dark theme, electric blue and green accents
+- **Auto-refreshing pipeline** — data updates weekly via GitHub Actions
+---
+ 
+## 🏗️ Architecture
+ 
+```
+Space-Track.org API (U.S. Space Force)
+          ↓
+   Python ETL Pipeline (fetch.py)
+          ↓
+   Supabase (PostgreSQL) — 31,000+ objects
+          ↓
+   React + Three.js Frontend
+          ↓
+   Vercel (Auto-deploy from GitHub)
+```
+ 
+---
+ 
+## ✅ Completed
+ 
+### Backend / Data Pipeline
+- [x] Authenticated Space-Track.org API integration
+- [x] Python ETL script to fetch, parse, and categorize all orbital objects
+- [x] Supabase PostgreSQL database with 31,142 tracked objects
+- [x] Paginated data loading to bypass Supabase row limits
+- [x] Upsert logic to prevent duplicate records on refresh
+- [x] Weekly automated pipeline via GitHub Actions (every Monday)
+- [x] Secure credential management via `.env` and GitHub Secrets
+### Frontend / Globe
+- [x] Interactive 3D globe with Earth texture (NASA dark map)
+- [x] Military/HUD aesthetic — dark background, blue/green accents
+- [x] Drag to rotate, scroll to zoom
+- [x] Star field background
+- [x] Atmosphere glow effect
+- [x] Wireframe grid overlay
+- [x] Points geometry rendering (21,000+ satellites, performant)
+- [x] Color-coded satellites by organization
+- [x] Left sidebar with toggle filters per organization
+- [x] Active/dimmed state when filters selected
+- [x] Dynamic object count in header based on active filters
+- [x] Smooth satellite occlusion behind Earth
+- [x] Vercel deployment with auto-deploy on push
+- [x] Vercel Web Analytics
+---
+ 
+## 🚧 Roadmap
+ 
+### Performance
+- [ ] Switch to full 27,000+ object rendering (debris included)
+- [ ] Debris layer as separate toggle — dimmer, smaller points
+- [ ] Level of detail (LOD) — fewer points when zoomed out
+### Orbital Mechanics
+- [ ] Real TLE-based positioning using satellite.js
+- [ ] Real-time orbital propagation (update positions every 30s)
+- [ ] Orbit ring visualization on satellite click
+- [ ] Category orbit rings — click SpaceX to see all Starlink orbits
+### UI / UX
+- [ ] Click satellite → detail panel (name, type, country, orbit stats)
+- [ ] Search bar to find a specific satellite by name or NORAD ID
+- [ ] Satellite count breakdown per organization in sidebar
+- [ ] Animated satellite movement along orbital paths
+- [ ] Mobile touch support (pinch to zoom, drag to rotate)
+### Data & Backend
+- [ ] Enable Supabase Row Level Security (RLS) before public launch
+- [ ] Add debris to database with separate rendering pipeline
+- [ ] Historical launch date timeline slider
+- [ ] Filter by object type (payload, rocket body, debris)
+- [ ] Link second PostgreSQL database for user data / saved views
+### Polish
+- [ ] Custom domain
+- [ ] Loading screen with progress bar
+- [ ] About panel explaining the data source
+- [ ] Share a specific satellite view via URL
+---
+ 
+## 🛠️ Tech Stack
+ 
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, Three.js |
+| Orbital Math | satellite.js (TLE propagation) |
+| Database | Supabase (PostgreSQL) |
+| Data Pipeline | Python 3.11, requests, python-dotenv |
+| Scheduling | GitHub Actions (weekly cron) |
+| Deployment | Vercel |
+| Data Source | Space-Track.org (U.S. Space Force) |
+ 
+---
+ 
+## 🚀 Running Locally
+ 
+### Prerequisites
+- Python 3.11+
+- Node.js 22+
+- Conda or venv
+- Space-Track.org account (free)
+- Supabase project (free)
+### Backend (Data Pipeline)
+ 
+```bash
+# Create and activate conda environment
+conda create -n space-tracker python=3.11
+conda activate space-tracker
+ 
+# Install dependencies
+pip install requests python-dotenv supabase
+ 
+# Create .env file
+cp .env.example .env
+# Add your Space-Track and Supabase credentials
+ 
+# Run pipeline
+python fetch.py
+```
+ 
+### Frontend
+ 
+```bash
+cd orbit-atlas-web
+ 
+# Install dependencies
+npm install
+ 
+# Create .env file
+echo "REACT_APP_SUPABASE_URL=your_url" > .env
+echo "REACT_APP_SUPABASE_KEY=your_key" >> .env
+ 
+# Start dev server
+npm start
+```
+ 
+---
+ 
+## 📊 Data Source
+ 
+All orbital data sourced from **[Space-Track.org](https://www.space-track.org)**, operated by the U.S. Space Force 18th Space Defense Squadron. Data is updated weekly and includes General Perturbations (GP) element sets for all tracked objects in Earth orbit.
+ 
+---
+ 
+## 👤 Author
+ 
+**Jackson Dienes**
