@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { createClient } from "@supabase/supabase-js";
+import { Analytics } from "@vercel/analytics/react";
 
 const supabase = createClient(
   process.env.REACT_APP_SUPABASE_URL,
@@ -259,6 +260,7 @@ export default function App() {
           ))}
         </div>
       )}
+      <Analytics />
     </div>
   );
 }
