@@ -72,7 +72,7 @@ export default function App() {
     // Scene setup
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
     camera.position.z = 3;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -81,7 +81,7 @@ export default function App() {
     mountRef.current.appendChild(renderer.domElement);
 
     // Earth globe
-    const earthGeo = new THREE.SphereGeometry(1, 64, 64);
+    const earthGeo = new THREE.SphereGeometry(0.98, 64, 64);
     const textureLoader = new THREE.TextureLoader();
     const earthTexture = textureLoader.load(
       "https://unpkg.com/three-globe/example/img/earth-dark.jpg"
@@ -90,13 +90,14 @@ export default function App() {
       map: earthTexture,
       specular: 0x00d4ff,
       shininess: 15,
+      depthWrite: true,
     });
     const earth = new THREE.Mesh(earthGeo, earthMat);
     scene.add(earth);
 
     // Wireframe overlay for that military grid look
     const wireMat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true, opacity: 0.08, transparent: true });
-    const wire = new THREE.Mesh(new THREE.SphereGeometry(1.001, 32, 32), wireMat);
+    const wire = new THREE.Mesh(new THREE.SphereGeometry(0.981, 32, 32), wireMat);
     scene.add(wire);
 
     // Atmosphere glow
@@ -186,27 +187,51 @@ export default function App() {
 
       satsRef.current = data.map(s => ({ ...s, category: categorize(s) }));
 
-      // Plot satellites as dots
-      data.forEach((sat, i) => {
+      // Build a single Points geometry for all satellites
+      const positions = [];
+      const colors = [];
+      const satObjects = [];
+
+      data.forEach((sat) => {
         if (!sat.inclination || !sat.apoapsis) return;
+
         const inc = (sat.inclination * Math.PI) / 180;
-        const alt = 1 + Math.min((sat.apoapsis / 6371) * 0.3, 0.8);
+        const alt = 1.05 + Math.min((sat.apoapsis / 6371) * 0.3, 0.8);
         const lon = Math.random() * Math.PI * 2;
         const lat = (Math.random() - 0.5) * inc * 2;
+
         const x = alt * Math.cos(lat) * Math.cos(lon);
         const y = alt * Math.sin(lat);
         const z = alt * Math.cos(lat) * Math.sin(lon);
 
         const cat = categorize(sat);
-        const color = CATEGORIES.find(c => c.id === cat)?.color || "#ffffff";
-        const geo = new THREE.SphereGeometry(0.003, 4, 4);
-        const mat = new THREE.MeshBasicMaterial({ color });
-        const point = new THREE.Mesh(geo, mat);
-        point.position.set(x, y, z);
-        point.userData = { index: i, category: cat };
-        earth.add(point);
-        pointsRef.current.push(point);
+        const hex = CATEGORIES.find(c => c.id === cat)?.color || "#ffffff";
+        const color = new THREE.Color(hex);
+
+        positions.push(x, y, z);
+        colors.push(color.r, color.g, color.b);
+        satObjects.push({ ...sat, category: cat });
       });
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+
+      const mat = new THREE.PointsMaterial({
+        size: 0.008,
+        vertexColors: true,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+        depthTest: true,
+      });
+
+      const points = new THREE.Points(geo, mat);
+      points.frustumCulled = false;
+      points.renderOrder = 1;
+      earth.add(points);
+      pointsRef.current = { geo, mat, satObjects, colors: [...colors] };
 
       setVisibleCount(satsRef.current.length);
       setLoading(false);
@@ -229,23 +254,29 @@ export default function App() {
 
   // Update dot visibility when filters change
   useEffect(() => {
-    pointsRef.current.forEach(point => {
-      const cat = point.userData.category;
-      const isActive = active.length === 0 || active.includes(cat);
-      point.material.color.set(isActive
-        ? CATEGORIES.find(c => c.id === cat)?.color || "#ffffff"
-        : "#1a1a2e"
-      );
-      point.material.opacity = isActive ? 1 : 0.15;
-      point.material.transparent = !isActive;
-    });
+  const { geo, satObjects, colors: originalColors } = pointsRef.current;
+  if (!geo || !satObjects) return;
 
-    const count = active.length === 0
-      ? satsRef.current.length
-      : satsRef.current.filter(s => active.includes(s.category)).length;
-    setVisibleCount(count);
+  const newColors = [];
+  satObjects.forEach((sat) => {
+    const isActive = active.length === 0 || active.includes(sat.category);
+    if (isActive) {
+      const hex = CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff";
+      const color = new THREE.Color(hex);
+      newColors.push(color.r, color.g, color.b);
+    } else {
+      newColors.push(0.05, 0.05, 0.1);
+    }
+  });
 
-  }, [active]);
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(newColors, 3));
+  geo.attributes.color.needsUpdate = true;
+
+  const count = active.length === 0
+    ? satObjects.length
+    : satObjects.filter(s => active.includes(s.category)).length;
+  setVisibleCount(count);
+}, [active]);
 
   return (
     <div style={{ background: "#020818", width: "100vw", height: "100vh", overflow: "hidden", fontFamily: "'Courier New', monospace" }}>
