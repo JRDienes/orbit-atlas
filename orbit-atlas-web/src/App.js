@@ -13,14 +13,41 @@ const CATEGORIES = [
   { id: "military", label: "DOD / Military", color: "#00ff88" },
   { id: "russia", label: "Russia", color: "#ff4444" },
   { id: "china", label: "China", color: "#ffaa00" },
+  { id: "uk", label: "United Kingdom", color: "#ff88ff" },
   { id: "other", label: "Other", color: "#ffffff" },
 ];
 
 function categorize(sat) {
-  if (sat.object_name?.toUpperCase().includes("STARLINK")) return "starlink";
-  if (sat.country_code === "CIS" || sat.country_code === "RU") return "russia";
-  if (sat.country_code === "PRC") return "china";
-  if (sat.object_name?.toUpperCase().includes("USA") || sat.object_name?.toUpperCase().includes("NROL")) return "military";
+  const name = sat.object_name?.toUpperCase() || "";
+  const country = sat.country_code || "";
+
+  // SpaceX / Starlink
+  if (name.includes("STARLINK") || name.includes("STARSHIP")) return "starlink";
+
+  // DOD / Military — US government/military satellites
+  if (
+    name.includes("USA ") ||
+    name.includes("NROL") ||
+    name.includes("NAVSTAR") ||
+    name.includes("GPS") ||
+    name.includes("AEHF") ||
+    name.includes("WGS") ||
+    name.includes("SBIRS") ||
+    name.includes("DSP ") ||
+    name.includes("MILSTAR") ||
+    name.includes("MUOS")
+  ) return "military";
+
+  // Russia
+  if (country === "CIS" || country === "RU") return "russia";
+
+  // China
+  if (country === "PRC") return "china";
+
+  // UK — OneWeb etc
+  if (country === "UK") return "uk";
+
+  // Everything else
   return "other";
 }
 
@@ -29,6 +56,7 @@ export default function App() {
   const [active, setActive] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(0);
   const satsRef = useRef([]);
   const pointsRef = useRef([]);
   const sceneRef = useRef(null);
@@ -54,12 +82,14 @@ export default function App() {
 
     // Earth globe
     const earthGeo = new THREE.SphereGeometry(1, 64, 64);
+    const textureLoader = new THREE.TextureLoader();
+    const earthTexture = textureLoader.load(
+      "https://unpkg.com/three-globe/example/img/earth-dark.jpg"
+    );
     const earthMat = new THREE.MeshPhongMaterial({
-      color: 0x0a1628,
-      emissive: 0x0a1628,
+      map: earthTexture,
       specular: 0x00d4ff,
-      shininess: 20,
-      wireframe: false,
+      shininess: 15,
     });
     const earth = new THREE.Mesh(earthGeo, earthMat);
     scene.add(earth);
@@ -135,13 +165,24 @@ export default function App() {
     // Load satellites from Supabase
     async function loadSats() {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("satellites")
-        .select("norad_cat_id, object_name, object_type, country_code, inclination, apoapsis, periapsis, period, launch_date, tle_line1, tle_line2")
-        .neq("object_type", "DEBRIS")
-        .limit(30000);
+      let allData = [];
+      let page = 0;
+      const pageSize = 1000;
 
-      if (error) { console.error(error); setLoading(false); return; }
+      while (true) {
+        const { data: pageData, error: pageError } = await supabase
+          .from("satellites")
+          .select("norad_cat_id, object_name, object_type, country_code, inclination, apoapsis, periapsis, period, launch_date, tle_line1, tle_line2")
+          .neq("object_type", "DEBRIS")
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (pageError || !pageData || pageData.length === 0) break;
+        allData = [...allData, ...pageData];
+        if (pageData.length < pageSize) break;
+        page++;
+      }
+
+      const data = allData;
 
       satsRef.current = data.map(s => ({ ...s, category: categorize(s) }));
 
@@ -167,6 +208,7 @@ export default function App() {
         pointsRef.current.push(point);
       });
 
+      setVisibleCount(satsRef.current.length);
       setLoading(false);
     }
 
@@ -197,6 +239,12 @@ export default function App() {
       point.material.opacity = isActive ? 1 : 0.15;
       point.material.transparent = !isActive;
     });
+
+    const count = active.length === 0
+      ? satsRef.current.length
+      : satsRef.current.filter(s => active.includes(s.category)).length;
+    setVisibleCount(count);
+
   }, [active]);
 
   return (
@@ -211,7 +259,7 @@ export default function App() {
           <div style={{ color: "#00ff8888", fontSize: 11, letterSpacing: 2 }}>SPACE OBJECT TRACKING SYSTEM</div>
         </div>
         <div style={{ color: "#00d4ff88", fontSize: 12, letterSpacing: 2 }}>
-          {loading ? "LOADING OBJECTS..." : `${satsRef.current.length.toLocaleString()} OBJECTS TRACKED`}
+          {loading ? "LOADING OBJECTS..." : `${visibleCount.toLocaleString()} OBJECTS TRACKED`}
         </div>
       </div>
 
