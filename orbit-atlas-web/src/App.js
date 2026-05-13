@@ -8,12 +8,12 @@ const supabase = createClient(
   process.env.REACT_APP_SUPABASE_KEY
 );
 
-const CATEGORIES = [
+export const CATEGORIES = [
   { id: "starlink", label: "SpaceX / Starlink", color: "#00d4ff" },
   { id: "military", label: "DOD / Military", color: "#00ff88" },
   { id: "russia", label: "Russia", color: "#ff4444" },
   { id: "china", label: "China", color: "#ffaa00" },
-  { id: "uk", label: "United Kingdom", color: "#ff88ff" },
+  { id: "europe", label: "Europe / ESA", color: "#aa88ff" },
   { id: "other", label: "Other", color: "#ffffff" },
 ];
 
@@ -44,8 +44,8 @@ function categorize(sat) {
   // China
   if (country === "PRC") return "china";
 
-  // UK — OneWeb etc
-  if (country === "UK") return "uk";
+  // Europe / ESA
+  if (["UK", "ESA", "FR", "GER", "IT", "SPN", "EUTE", "SES", "IRID"].includes(country)) return "europe";
 
   // Everything else
   return "other";
