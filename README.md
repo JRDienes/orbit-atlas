@@ -74,13 +74,13 @@ Space-Track.org API (U.S. Space Force)
 ### 🌐 Globe & Visualization
 - [ ] Real TLE-based positioning using satellite.js
 - [ ] Real-time orbital propagation (update positions every 30s)
-- [ ] Orbit ring visualization on satellite click
-- [ ] Category orbit rings — click SpaceX to see all Starlink orbits
-- [ ] Debris layer as separate toggle — dimmer, smaller points
+- [x] Orbit ring visualization on satellite click
+- [x] Category orbit rings — click SpaceX to see all Starlink orbits
+- [x] Debris layer as separate toggle — dimmer, smaller points
 - [ ] Level of detail (LOD) — fewer points when zoomed out
 - [ ] Full 27,000+ object rendering including debris
 ### 🛰️ Satellite Detail & Interaction
-- [ ] Click satellite → slide-in detail panel (name, type, country, orbit stats)
+- [x] Click satellite → slide-in detail panel (name, type, country, orbit stats)
 - [ ] Search bar to find satellite by name or NORAD ID
 - [ ] Animated satellite movement along orbital paths
 - [ ] Mobile touch support (pinch to zoom, drag to rotate)
@@ -115,7 +115,7 @@ Space-Track.org API (U.S. Space Force)
 - [ ] Decay/reentry predictions with countdown timers
 - [ ] Reentry risk map — show predicted impact zones
 ### 🛸 Constellation Trackers
-- [ ] Amazon Kuiper constellation — live growth tracker
+- [x] Amazon Kuiper constellation — live growth tracker
 - [ ] AST SpaceMobile constellation tracker
 - [ ] OneWeb constellation
 - [ ] Watch each constellation grow in real time as launches occur
