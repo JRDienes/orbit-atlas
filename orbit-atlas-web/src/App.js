@@ -26,6 +26,25 @@ export const CATEGORIES = [
   { id: "rocket_body",   label: "Rocket Bodies",      color: "#778899" }, // Slate
 ];
 
+const CATEGORY_CODES = {
+  starlink:      ["Name: STARLINK"],
+  kuiper:        ["Name: KUIPER"],
+  us:            ["US", "CA", "AUS", "NZ", "GLOB", "ORB", "O3B", "ITSO"],
+  uk:            ["UK", "IM"],
+  europe:        ["FR", "GER", "IT", "SPN", "NOR", "SWED", "BEL", "NETH", "SWTZ", "DEN",
+                  "FIN", "POR", "POL", "CZE", "CZCH", "HUN", "ROM", "EST", "LTU", "HRV",
+                  "SVN", "FGER", "GREC", "LUXE", "TURK", "ESA", "EUME", "EUTE", "SES", "FRIT"],
+  russia:        ["CIS", "BELA", "KAZ", "UKR", "AZER", "SEAL", "TMMC", "STCT"],
+  china:         ["PRC", "CHBZ", "CHLE", "NICO", "ABS", "PAKI", "LAOS", "NKOR"],
+  japan:         ["JPN"],
+  india:         ["IND"],
+  middle_east:   ["SAUD", "UAE", "QAT", "KWT", "BHR", "JOR", "IRAN", "IRAQ", "AB"],
+  asia_pacific:  ["SKOR", "INDO", "MALA", "THAI", "SING", "BGD", "TWN", "ASRA", "RP"],
+  rest_of_world: ["All other codes"],
+  debris:        ["Type: DEBRIS"],
+  rocket_body:   ["Type: ROCKET BODY"],
+};
+
 function categorize(sat) {
   const name = sat.object_name?.toUpperCase() || "";
   const country = sat.country_code || "";
@@ -98,6 +117,7 @@ const ISS_COLOR = new THREE.Color("#FFD700");
 export default function App() {
   const mountRef = useRef(null);
   const [active, setActive] = useState([]);
+  const [selectedCodes, setSelectedCodes] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [visibleCount, setVisibleCount] = useState(0);
@@ -422,11 +442,27 @@ export default function App() {
     const { geo, satObjects } = pointsRef.current;
     if (!geo || !satObjects) return;
 
+    // Returns filterable country codes for a category (excludes name/type sentinels)
+    const getFilterableCodes = (catId) => {
+      if (catId === "rest_of_world") {
+        return [...new Set(satObjects.filter(s => s.category === "rest_of_world" && s.country_code).map(s => s.country_code))];
+      }
+      return (CATEGORY_CODES[catId] || []).filter(c => !c.startsWith("Name:") && !c.startsWith("Type:") && c !== "All other codes");
+    };
+
+    // Per-category: if any selected codes belong to this cat, filter to those; else show all in cat
+    const satVisible = (sat) => {
+      const inCat = active.length === 0 || active.includes(sat.category);
+      if (!inCat) return false;
+      const catCodes = getFilterableCodes(sat.category);
+      const selectedInCat = selectedCodes.filter(c => catCodes.includes(c));
+      return selectedInCat.length === 0 || selectedInCat.includes(sat.country_code);
+    };
+
     // Update dot colors
     const newColors = [];
     satObjects.forEach((sat) => {
-      const isActive = active.length === 0 || active.includes(sat.category);
-      if (isActive) {
+      if (satVisible(sat)) {
         const hex = CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff";
         const color = new THREE.Color(hex);
         newColors.push(color.r, color.g, color.b);
@@ -437,9 +473,7 @@ export default function App() {
     geo.setAttribute("color", new THREE.Float32BufferAttribute(newColors, 3));
     geo.attributes.color.needsUpdate = true;
 
-    const count = active.length === 0
-      ? satObjects.length
-      : satObjects.filter(s => active.includes(s.category)).length;
+    const count = satObjects.filter(satVisible).length;
     setVisibleCount(count);
 
     // Remove old orbit lines
@@ -457,7 +491,13 @@ export default function App() {
     const N = 72; // points per orbit
 
     active.forEach(catId => {
-      const catSats = satObjects.filter(s => s.category === catId && s.apoapsis != null && s.inclination != null);
+      const selectedInCat = selectedCodes.filter(c => getFilterableCodes(catId).includes(c));
+      const catSats = satObjects.filter(s =>
+        s.category === catId &&
+        s.apoapsis != null &&
+        s.inclination != null &&
+        (selectedInCat.length === 0 || selectedInCat.includes(s.country_code))
+      );
       if (catSats.length === 0) return;
 
       const catColor = new THREE.Color(CATEGORIES.find(c => c.id === catId)?.color || "#ffffff");
@@ -519,7 +559,7 @@ export default function App() {
       earth.add(orbitLines);
       shellsRef.current.push(orbitLines);
     });
-  }, [active]);
+  }, [active, selectedCodes]);
 
   // ISS live tracking
   useEffect(() => {
@@ -649,24 +689,84 @@ export default function App() {
         </div>
       </div>
 
-      {/* Left Sidebar */}
-      <div style={{ position: "absolute", top: "50%", left: 20, transform: "translateY(-50%)", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "20px 16px", backdropFilter: "blur(10px)", minWidth: 200 }}>
-        <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16 }}>FILTER OBJECTS</div>
-        {CATEGORIES.map(cat => (
-          <div
-            key={cat.id}
-            onClick={() => toggleCategory(cat.id)}
-            style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: "pointer", opacity: active.length === 0 || active.includes(cat.id) ? 1 : 0.4, transition: "opacity 0.2s" }}
-          >
-            {/* Toggle switch */}
-            <div style={{ width: 36, height: 18, borderRadius: 9, background: active.includes(cat.id) ? cat.color : "#1a1a2e", border: `1px solid ${cat.color}`, transition: "background 0.2s", position: "relative" }}>
-              <div style={{ position: "absolute", top: 2, left: active.includes(cat.id) ? 18 : 2, width: 12, height: 12, borderRadius: "50%", background: active.includes(cat.id) ? "#020818" : cat.color, transition: "left 0.2s" }} />
+      {/* Left Column — filter + key */}
+      <div style={{ position: "absolute", top: "50%", left: 20, transform: "translateY(-50%)", display: "flex", flexDirection: "column", gap: 10, width: 220 }}>
+        {/* Filter Sidebar */}
+        <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "20px 16px", backdropFilter: "blur(10px)", minWidth: 200 }}>
+          <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16 }}>FILTER OBJECTS</div>
+          {CATEGORIES.map(cat => (
+            <div
+              key={cat.id}
+              onClick={() => toggleCategory(cat.id)}
+              style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: "pointer", opacity: active.length === 0 || active.includes(cat.id) ? 1 : 0.4, transition: "opacity 0.2s" }}
+            >
+              {/* Toggle switch */}
+              <div style={{ width: 36, height: 18, borderRadius: 9, background: active.includes(cat.id) ? cat.color : "#1a1a2e", border: `1px solid ${cat.color}`, transition: "background 0.2s", position: "relative" }}>
+                <div style={{ position: "absolute", top: 2, left: active.includes(cat.id) ? 18 : 2, width: 12, height: 12, borderRadius: "50%", background: active.includes(cat.id) ? "#020818" : cat.color, transition: "left 0.2s" }} />
+              </div>
+              <div style={{ color: cat.color, fontSize: 12, letterSpacing: 1 }}>{cat.label}</div>
             </div>
-            <div style={{ color: cat.color, fontSize: 12, letterSpacing: 1 }}>{cat.label}</div>
+          ))}
+          <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 12 }}>
+            <div onClick={() => { setActive([]); setSelectedCodes([]); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
           </div>
-        ))}
-        <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 12 }}>
-          <div onClick={() => setActive([])} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
+        </div>
+
+        {/* Country Code Key */}
+        <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "16px", backdropFilter: "blur(10px)" }}>
+            <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 12 }}>COUNTRY CODES</div>
+            {active.map(catId => {
+              const cat = CATEGORIES.find(c => c.id === catId);
+              const codes = catId === "rest_of_world"
+                ? [...new Set(
+                    satsRef.current
+                      .filter(s => s.category === "rest_of_world" && s.country_code)
+                      .map(s => s.country_code)
+                  )].sort()
+                : (CATEGORY_CODES[catId] || []);
+              if (!cat) return null;
+              return (
+                <div key={catId} style={{ marginBottom: 12 }}>
+                  <div style={{ color: cat.color, fontSize: 10, letterSpacing: 1, marginBottom: 5 }}>{cat.label.toUpperCase()}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                    {codes.map(code => {
+                      const isSelected = selectedCodes.includes(code);
+                      const selectedInThisCat = codes.filter(c => selectedCodes.includes(c));
+                      const isDimmed = selectedInThisCat.length > 0 && !isSelected;
+                      return (
+                        <span
+                          key={code}
+                          onClick={() => setSelectedCodes(prev =>
+                            prev.includes(code)
+                              ? prev.filter(c => c !== code)
+                              : [...prev, code]
+                          )}
+                          style={{
+                            background: isSelected ? `${cat.color}44` : `${cat.color}18`,
+                            border: `1px solid ${isSelected ? cat.color : `${cat.color}44`}`,
+                            borderRadius: 3,
+                            color: isSelected ? cat.color : `${cat.color}cc`,
+                            fontSize: 9,
+                            padding: "2px 5px",
+                            letterSpacing: 1,
+                            cursor: "pointer",
+                            opacity: isDimmed ? 0.35 : 1,
+                            transition: "opacity 0.15s, background 0.15s",
+                          }}
+                        >
+                          {code}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+            {selectedCodes.length > 0 && (
+              <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 10 }}>
+                <div onClick={() => setSelectedCodes([])} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET CODE FILTER</div>
+              </div>
+            )}
         </div>
       </div>
 
