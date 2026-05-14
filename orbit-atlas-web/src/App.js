@@ -80,6 +80,10 @@ function categorize(sat) {
   return "rest_of_world";
 }
 
+function altToRadius(altKm) {
+  return 1.05 + Math.log(1 + Math.min(Math.max(200, altKm), 42000) / 6371);
+}
+
 export default function App() {
   const mountRef = useRef(null);
   const [active, setActive] = useState([]);
@@ -89,6 +93,9 @@ export default function App() {
   const satsRef = useRef([]);
   const pointsRef = useRef([]);
   const sceneRef = useRef(null);
+  const earthRef = useRef(null);
+  const shellsRef = useRef([]);
+  const highlightRef = useRef(null);
 
   // Toggle category filter
   function toggleCategory(id) {
@@ -102,7 +109,7 @@ export default function App() {
     const scene = new THREE.Scene();
     sceneRef.current = scene;
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-    camera.position.z = 3;
+    camera.position.z = 4.5;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -122,6 +129,7 @@ export default function App() {
       depthWrite: true,
     });
     const earth = new THREE.Mesh(earthGeo, earthMat);
+    earthRef.current = earth;
     scene.add(earth);
 
     // Wireframe overlay for that military grid look
@@ -153,27 +161,93 @@ export default function App() {
     starGeo.setAttribute("position", new THREE.Float32BufferAttribute(starVerts, 3));
     scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.3 })));
 
+    // Shared raycaster
+    const raycaster = new THREE.Raycaster();
+    raycaster.params.Points.threshold = 0.018;
+
+    // Hover highlight — single point updated on mousemove
+    let hoveredIdx = -1;
+    const hoverGeo = new THREE.BufferGeometry();
+    hoverGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
+    const hoverMat = new THREE.PointsMaterial({
+      size: 0.024,
+      color: 0xffffff,
+      sizeAttenuation: true,
+      depthWrite: false,
+    });
+    const hoverPoint = new THREE.Points(hoverGeo, hoverMat);
+    hoverPoint.renderOrder = 3;
+    hoverPoint.frustumCulled = false;
+    hoverPoint.visible = false;
+    earth.add(hoverPoint);
+
     // Mouse drag to rotate
     let isDragging = false;
+    let dragMoved = false;
     let prevMouse = { x: 0, y: 0 };
-    const onMouseDown = e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; };
+    let mouseDownPos = { x: 0, y: 0 };
+    const onMouseDown = e => {
+      isDragging = true;
+      dragMoved = false;
+      prevMouse = { x: e.clientX, y: e.clientY };
+      mouseDownPos = { x: e.clientX, y: e.clientY };
+    };
     const onMouseUp = () => { isDragging = false; };
     const onMouseMove = e => {
-      if (!isDragging) return;
-      const dx = e.clientX - prevMouse.x;
-      const dy = e.clientY - prevMouse.y;
-      earth.rotation.y += dx * 0.005;
-      earth.rotation.x += dy * 0.005;
-      wire.rotation.y = earth.rotation.y;
-      wire.rotation.x = earth.rotation.x;
-      prevMouse = { x: e.clientX, y: e.clientY };
+      if (isDragging) {
+        const dx = e.clientX - prevMouse.x;
+        const dy = e.clientY - prevMouse.y;
+        if (Math.abs(e.clientX - mouseDownPos.x) > 4 || Math.abs(e.clientY - mouseDownPos.y) > 4) dragMoved = true;
+        earth.rotation.y += dx * 0.005;
+        earth.rotation.x += dy * 0.005;
+        wire.rotation.y = earth.rotation.y;
+        wire.rotation.x = earth.rotation.x;
+        prevMouse = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      // Hover detection when idle
+      const { points, satObjects } = pointsRef.current;
+      if (!points || !satObjects) return;
+      const mouse = new THREE.Vector2(
+        (e.clientX / window.innerWidth) * 2 - 1,
+        -(e.clientY / window.innerHeight) * 2 + 1
+      );
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObject(points);
+      if (hits.length > 0) {
+        hoveredIdx = hits[0].index;
+        const sat = satObjects[hoveredIdx];
+        hoverMat.color.set(CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff");
+        const pos = hoverGeo.getAttribute("position");
+        pos.setXYZ(0, sat.x, sat.y, sat.z);
+        pos.needsUpdate = true;
+        hoverPoint.visible = true;
+        document.body.style.cursor = "pointer";
+      } else {
+        hoveredIdx = -1;
+        hoverPoint.visible = false;
+        document.body.style.cursor = "default";
+      }
     };
+
+    // Click uses already-hovered index — no double raycast needed
+    const onClick = e => {
+      if (dragMoved) return;
+      if (hoveredIdx >= 0) {
+        const { satObjects } = pointsRef.current;
+        if (satObjects) setSelected(satObjects[hoveredIdx]);
+      } else {
+        setSelected(null);
+      }
+    };
+
     window.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("click", onClick);
 
     // Zoom
-    const onWheel = e => { camera.position.z = Math.min(6, Math.max(1.5, camera.position.z + e.deltaY * 0.005)); };
+    const onWheel = e => { camera.position.z = Math.min(9, Math.max(1.5, camera.position.z + e.deltaY * 0.005)); };
     window.addEventListener("wheel", onWheel);
 
     // Animation loop
@@ -225,7 +299,7 @@ export default function App() {
         if (!sat.inclination || !sat.apoapsis) return;
 
         const inc = (sat.inclination * Math.PI) / 180;
-        const alt = 1.05 + Math.min((sat.apoapsis / 6371) * 0.3, 0.8);
+        const alt = altToRadius(sat.apoapsis);
         const lon = Math.random() * Math.PI * 2;
         const lat = (Math.random() - 0.5) * inc * 2;
 
@@ -239,7 +313,7 @@ export default function App() {
 
         positions.push(x, y, z);
         colors.push(color.r, color.g, color.b);
-        satObjects.push({ ...sat, category: cat });
+        satObjects.push({ ...sat, category: cat, lon, x, y, z });
       });
 
       const geo = new THREE.BufferGeometry();
@@ -260,7 +334,7 @@ export default function App() {
       points.frustumCulled = false;
       points.renderOrder = 1;
       earth.add(points);
-      pointsRef.current = { geo, mat, satObjects, colors: [...colors] };
+      pointsRef.current = { geo, mat, satObjects, colors: [...colors], points };
 
       setVisibleCount(satsRef.current.length);
       setLoading(false);
@@ -272,8 +346,12 @@ export default function App() {
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("click", onClick);
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", onResize);
+      document.body.style.cursor = "default";
+      hoverGeo.dispose();
+      hoverMat.dispose();
       renderer.dispose();
       if (mountRef.current && renderer.domElement.parentNode === mountRef.current) {
         mountRef.current.removeChild(renderer.domElement);
@@ -281,31 +359,135 @@ export default function App() {
     };
   }, []);
 
-  // Update dot visibility when filters change
+  // Update dot visibility and orbit shells when filters change
   useEffect(() => {
-  const { geo, satObjects, colors: originalColors } = pointsRef.current;
-  if (!geo || !satObjects) return;
+    const { geo, satObjects } = pointsRef.current;
+    if (!geo || !satObjects) return;
 
-  const newColors = [];
-  satObjects.forEach((sat) => {
-    const isActive = active.length === 0 || active.includes(sat.category);
-    if (isActive) {
-      const hex = CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff";
-      const color = new THREE.Color(hex);
-      newColors.push(color.r, color.g, color.b);
-    } else {
-      newColors.push(0.05, 0.05, 0.1);
+    // Update dot colors
+    const newColors = [];
+    satObjects.forEach((sat) => {
+      const isActive = active.length === 0 || active.includes(sat.category);
+      if (isActive) {
+        const hex = CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff";
+        const color = new THREE.Color(hex);
+        newColors.push(color.r, color.g, color.b);
+      } else {
+        newColors.push(0.05, 0.05, 0.1);
+      }
+    });
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(newColors, 3));
+    geo.attributes.color.needsUpdate = true;
+
+    const count = active.length === 0
+      ? satObjects.length
+      : satObjects.filter(s => active.includes(s.category)).length;
+    setVisibleCount(count);
+
+    // Remove old orbit lines
+    const earth = earthRef.current;
+    shellsRef.current.forEach(obj => {
+      if (earth) earth.remove(obj);
+      obj.geometry.dispose();
+      obj.material.dispose();
+    });
+    shellsRef.current = [];
+
+    if (active.length === 0 || !earth) return;
+
+    const MAX_ORBITS = 300;
+    const N = 72; // points per orbit
+
+    active.forEach(catId => {
+      const catSats = satObjects.filter(s => s.category === catId && s.apoapsis != null && s.inclination != null);
+      if (catSats.length === 0) return;
+
+      const catColor = new THREE.Color(CATEGORIES.find(c => c.id === catId)?.color || "#ffffff");
+
+      // Sample evenly when category has more sats than MAX_ORBITS
+      const step = Math.max(1, Math.floor(catSats.length / MAX_ORBITS));
+      const sampled = catSats.filter((_, i) => i % step === 0).slice(0, MAX_ORBITS);
+      const opacity = Math.max(0.12, 0.35 - (sampled.length / MAX_ORBITS) * 0.23);
+
+      const positions = [];
+
+      sampled.forEach(sat => {
+        const inc = (sat.inclination * Math.PI) / 180;
+        const raan = sat.lon ?? (sat.norad_cat_id % 628) / 100; // deterministic fallback
+        const sinI = Math.sin(inc);
+        const cosI = Math.cos(inc);
+        const sinR = Math.sin(raan);
+        const cosR = Math.cos(raan);
+
+        const rApo  = altToRadius(sat.apoapsis);
+        const rPeri = altToRadius(sat.periapsis ?? sat.apoapsis);
+        const a = (rApo + rPeri) / 2;
+        const c = (rApo - rPeri) / 2;
+        const b = Math.sqrt(Math.max(0, a * a - c * c));
+
+        // Build orbit points: ellipse in orbital plane, then rotate by inclination + RAAN
+        const pts = [];
+        for (let j = 0; j < N; j++) {
+          const theta = (j / N) * Math.PI * 2;
+          const xOrb = a * Math.cos(theta) - c; // Earth at focus
+          const zOrb = b * Math.sin(theta);
+
+          // Rotate by inclination around X-axis (tilts plane toward poles)
+          const x   = xOrb;
+          const y   = zOrb * sinI;
+          const zeq = zOrb * cosI;
+
+          // Rotate by RAAN around Y-axis (sets ascending node longitude)
+          pts.push(x * cosR - zeq * sinR, y, x * sinR + zeq * cosR);
+        }
+
+        // Pack as LineSegments pairs (closed loop)
+        for (let j = 0; j < N; j++) {
+          const j3 = j * 3;
+          const n3 = ((j + 1) % N) * 3;
+          positions.push(pts[j3], pts[j3 + 1], pts[j3 + 2]);
+          positions.push(pts[n3], pts[n3 + 1], pts[n3 + 2]);
+        }
+      });
+
+      const orbitGeo = new THREE.BufferGeometry();
+      orbitGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      const orbitLines = new THREE.LineSegments(orbitGeo, new THREE.LineBasicMaterial({
+        color: catColor,
+        transparent: true,
+        opacity,
+      }));
+      orbitLines.renderOrder = 2;
+      earth.add(orbitLines);
+      shellsRef.current.push(orbitLines);
+    });
+  }, [active]);
+
+  // Highlight selected satellite
+  useEffect(() => {
+    const earth = earthRef.current;
+    if (highlightRef.current) {
+      if (earth) earth.remove(highlightRef.current);
+      highlightRef.current.geometry.dispose();
+      highlightRef.current.material.dispose();
+      highlightRef.current = null;
     }
-  });
+    if (!selected || !earth) return;
 
-  geo.setAttribute("color", new THREE.Float32BufferAttribute(newColors, 3));
-  geo.attributes.color.needsUpdate = true;
-
-  const count = active.length === 0
-    ? satObjects.length
-    : satObjects.filter(s => active.includes(s.category)).length;
-  setVisibleCount(count);
-}, [active]);
+    const hlGeo = new THREE.BufferGeometry();
+    hlGeo.setAttribute("position", new THREE.Float32BufferAttribute([selected.x, selected.y, selected.z], 3));
+    const hlMat = new THREE.PointsMaterial({
+      size: 0.028,
+      color: 0xffffff,
+      sizeAttenuation: true,
+      depthWrite: false,
+    });
+    const hl = new THREE.Points(hlGeo, hlMat);
+    hl.renderOrder = 3;
+    hl.frustumCulled = false;
+    earth.add(hl);
+    highlightRef.current = hl;
+  }, [selected]);
 
   return (
     <div style={{ background: "#020818", width: "100vw", height: "100vh", overflow: "hidden", fontFamily: "'Courier New', monospace" }}>
