@@ -9,46 +9,75 @@ const supabase = createClient(
 );
 
 export const CATEGORIES = [
-  { id: "starlink", label: "SpaceX / Starlink", color: "#00d4ff" },
-  { id: "military", label: "DOD / Military", color: "#00ff88" },
-  { id: "russia", label: "Russia", color: "#ff4444" },
-  { id: "china", label: "China", color: "#ffaa00" },
-  { id: "europe", label: "Europe / ESA", color: "#aa88ff" },
-  { id: "other", label: "Other", color: "#ffffff" },
+  { id: "starlink",      label: "SpaceX / Starlink", color: "#00D4FF" }, // SpaceX cyan
+  { id: "kuiper",        label: "Amazon Kuiper",      color: "#FF9900" }, // Amazon orange
+  { id: "us",            label: "United States",      color: "#4488FF" }, // US flag blue
+  { id: "uk",            label: "United Kingdom",     color: "#FF2244" }, // Union Jack red
+  { id: "europe",        label: "Europe / ESA",       color: "#FFEE00" }, // EU flag gold
+  { id: "russia",        label: "Russia",             color: "#FF3333" }, // Russia red
+  { id: "china",         label: "China",              color: "#DD0000" }, // China flag red
+  { id: "japan",         label: "Japan",              color: "#FF66AA" }, // Cherry blossom
+  { id: "india",         label: "India",              color: "#FF7700" }, // India saffron
+  { id: "middle_east",   label: "Middle East",        color: "#FFB700" }, // Gulf gold
+  { id: "asia_pacific",  label: "Asia Pacific",       color: "#00DDAA" }, // Pacific teal
+  { id: "rest_of_world", label: "Rest of World",      color: "#AAAAAA" }, // Neutral grey
+  { id: "debris",        label: "Debris",             color: "#FF5500" }, // Warning orange
+  { id: "rocket_body",   label: "Rocket Bodies",      color: "#778899" }, // Slate
 ];
 
 function categorize(sat) {
   const name = sat.object_name?.toUpperCase() || "";
   const country = sat.country_code || "";
+  const type = sat.object_type?.toUpperCase() || "";
 
-  // SpaceX / Starlink
-  if (name.includes("STARLINK") || name.includes("STARSHIP")) return "starlink";
+  // Name-based constellations — exclusive, checked first
+  if (name.includes("STARLINK")) return "starlink";
+  if (name.includes("KUIPER")) return "kuiper";
 
-  // DOD / Military — US government/military satellites
+  // Object type
+  if (type === "DEBRIS") return "debris";
+  if (type === "ROCKET BODY") return "rocket_body";
+
+  // United States, Five Eyes & US-operated
   if (
-    name.includes("USA ") ||
-    name.includes("NROL") ||
-    name.includes("NAVSTAR") ||
-    name.includes("GPS") ||
-    name.includes("AEHF") ||
-    name.includes("WGS") ||
-    name.includes("SBIRS") ||
-    name.includes("DSP ") ||
-    name.includes("MILSTAR") ||
-    name.includes("MUOS")
-  ) return "military";
+    ["US", "CA", "AUS", "NZ", "GLOB", "ORB", "O3B", "ITSO"].includes(country) ||
+    name.includes("NROL") || name.includes("NAVSTAR") || name.includes("MILSTAR") ||
+    name.includes("AEHF") || name.includes("WGS") || name.includes("USA ")
+  ) return "us";
 
-  // Russia
-  if (country === "CIS" || country === "RU") return "russia";
-
-  // China
-  if (country === "PRC") return "china";
+  // United Kingdom
+  if (["UK", "IM"].includes(country)) return "uk";
 
   // Europe / ESA
-  if (["UK", "ESA", "FR", "GER", "IT", "SPN", "EUTE", "SES", "IRID"].includes(country)) return "europe";
+  if (["FR", "GER", "IT", "SPN", "NOR", "SWED", "BEL", "NETH", "SWTZ", "DEN",
+       "FIN", "POR", "POL", "CZE", "CZCH", "HUN", "ROM", "EST", "LTU", "HRV",
+       "SVN", "FGER", "GREC", "LUXE", "TURK",
+       "ESA", "EUME", "EUTE", "SES", "FRIT"].includes(country))
+    return "europe";
 
-  // Everything else
-  return "other";
+  // Russia & sphere
+  if (["CIS", "BELA", "KAZ", "UKR", "AZER", "SEAL", "TMMC", "STCT"].includes(country))
+    return "russia";
+
+  // China & sphere
+  if (["PRC", "CHBZ", "CHLE", "NICO", "ABS", "PAKI", "LAOS", "NKOR"].includes(country))
+    return "china";
+
+  // Japan
+  if (country === "JPN") return "japan";
+
+  // India
+  if (country === "IND") return "india";
+
+  // Middle East
+  if (["SAUD", "UAE", "QAT", "KWT", "BHR", "JOR", "IRAN", "IRAQ", "AB"].includes(country))
+    return "middle_east";
+
+  // Asia Pacific
+  if (["SKOR", "INDO", "MALA", "THAI", "SING", "BGD", "TWN", "ASRA", "RP"].includes(country))
+    return "asia_pacific";
+
+  return "rest_of_world";
 }
 
 export default function App() {
