@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import * as satellite from "satellite.js";
 import { createClient } from "@supabase/supabase-js";
 import { Analytics } from "@vercel/analytics/react";
 
@@ -84,18 +85,33 @@ function altToRadius(altKm) {
   return 1.05 + Math.log(1 + Math.min(Math.max(200, altKm), 42000) / 6371);
 }
 
+function latLonToXYZ(latDeg, lonDeg, altKm) {
+  const lat = (latDeg * Math.PI) / 180;
+  const lon = (lonDeg * Math.PI) / 180;
+  const r = altToRadius(altKm);
+  return [r * Math.cos(lat) * Math.cos(lon), r * Math.sin(lat), r * Math.cos(lat) * Math.sin(lon)];
+}
+
+const ISS_TRAIL_LEN = 18;
+const ISS_COLOR = new THREE.Color("#FFD700");
+
 export default function App() {
   const mountRef = useRef(null);
   const [active, setActive] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [visibleCount, setVisibleCount] = useState(0);
+  const [issData, setIssData] = useState(null);
   const satsRef = useRef([]);
   const pointsRef = useRef([]);
   const sceneRef = useRef(null);
   const earthRef = useRef(null);
   const shellsRef = useRef([]);
   const highlightRef = useRef(null);
+  const issMarkerRef = useRef(null);
+  const issTrailRef = useRef(null);
+  const issFutureRef = useRef(null);
+  const issSatrecRef = useRef(null);
 
   // Toggle category filter
   function toggleCategory(id) {
@@ -254,6 +270,9 @@ export default function App() {
     const animate = () => {
       requestAnimationFrame(animate);
       if (!isDragging) { earth.rotation.y += 0.0002; wire.rotation.y += 0.0002; }
+      if (issMarkerRef.current?.material) {
+        issMarkerRef.current.material.size = 0.030 + Math.sin(Date.now() * 0.003) * 0.010;
+      }
       renderer.render(scene, camera);
     };
     animate();
@@ -340,6 +359,39 @@ export default function App() {
       setLoading(false);
     }
 
+    // ISS marker
+    const issMarkerGeo = new THREE.BufferGeometry();
+    issMarkerGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3).setUsage(THREE.DynamicDrawUsage));
+    const issMarkerMat = new THREE.PointsMaterial({ size: 0.035, color: 0xFFD700, sizeAttenuation: true, depthWrite: false });
+    const issMarkerMesh = new THREE.Points(issMarkerGeo, issMarkerMat);
+    issMarkerMesh.renderOrder = 4;
+    issMarkerMesh.frustumCulled = false;
+    issMarkerMesh.visible = false;
+    earth.add(issMarkerMesh);
+    issMarkerRef.current = issMarkerMesh;
+
+    // ISS past trail
+    const trailPosBuf = new Float32Array(ISS_TRAIL_LEN * 3);
+    const trailColBuf = new Float32Array(ISS_TRAIL_LEN * 3);
+    const issTrailGeo = new THREE.BufferGeometry();
+    issTrailGeo.setAttribute("position", new THREE.Float32BufferAttribute(trailPosBuf, 3).setUsage(THREE.DynamicDrawUsage));
+    issTrailGeo.setAttribute("color",    new THREE.Float32BufferAttribute(trailColBuf, 3).setUsage(THREE.DynamicDrawUsage));
+    issTrailGeo.setDrawRange(0, 0);
+    const issTrailMesh = new THREE.Line(issTrailGeo, new THREE.LineBasicMaterial({ vertexColors: true }));
+    issTrailMesh.frustumCulled = false;
+    earth.add(issTrailMesh);
+    issTrailRef.current = { mesh: issTrailMesh, history: [] };
+
+    // ISS future orbit path
+    const futurePosBuf = new Float32Array(111 * 3);
+    const issFutureGeo = new THREE.BufferGeometry();
+    issFutureGeo.setAttribute("position", new THREE.Float32BufferAttribute(futurePosBuf, 3).setUsage(THREE.DynamicDrawUsage));
+    issFutureGeo.setDrawRange(0, 0);
+    const issFutureMesh = new THREE.Line(issFutureGeo, new THREE.LineBasicMaterial({ color: 0xFFD700, transparent: true, opacity: 0.25 }));
+    issFutureMesh.frustumCulled = false;
+    earth.add(issFutureMesh);
+    issFutureRef.current = issFutureMesh;
+
     loadSats();
 
     return () => {
@@ -352,6 +404,12 @@ export default function App() {
       document.body.style.cursor = "default";
       hoverGeo.dispose();
       hoverMat.dispose();
+      issMarkerGeo.dispose();
+      issMarkerMat.dispose();
+      issTrailGeo.dispose();
+      issTrailMesh.material.dispose();
+      issFutureGeo.dispose();
+      issFutureMesh.material.dispose();
       renderer.dispose();
       if (mountRef.current && renderer.domElement.parentNode === mountRef.current) {
         mountRef.current.removeChild(renderer.domElement);
@@ -463,6 +521,92 @@ export default function App() {
     });
   }, [active]);
 
+  // ISS live tracking
+  useEffect(() => {
+    function drawFuturePath(satrec) {
+      const futureObj = issFutureRef.current;
+      if (!futureObj) return;
+      const posAttr = futureObj.geometry.getAttribute("position");
+      const pts = [];
+      const now = Date.now();
+      for (let i = 0; i <= 110; i++) {
+        const t = new Date(now + i * 50 * 1000);
+        const pv = satellite.propagate(satrec, t);
+        if (!pv?.position) continue;
+        const gmst = satellite.gstime(t);
+        const geo = satellite.eciToGeodetic(pv.position, gmst);
+        const [x, y, z] = latLonToXYZ(
+          satellite.degreesLat(geo.latitude),
+          satellite.degreesLong(geo.longitude),
+          geo.height
+        );
+        pts.push(x, y, z);
+      }
+      for (let i = 0; i < pts.length; i++) posAttr.array[i] = pts[i];
+      posAttr.needsUpdate = true;
+      futureObj.geometry.setDrawRange(0, pts.length / 3);
+    }
+
+    async function fetchTLE() {
+      const { data } = await supabase
+        .from("satellites")
+        .select("tle_line1, tle_line2")
+        .eq("norad_cat_id", 25544)
+        .single();
+      if (!data?.tle_line1) return;
+      const satrec = satellite.twoline2satrec(data.tle_line1.trim(), data.tle_line2.trim());
+      issSatrecRef.current = satrec;
+      drawFuturePath(satrec);
+    }
+
+    async function pollISS() {
+      try {
+        const res = await fetch("https://api.wheretheiss.at/v1/satellites/25544");
+        const d = await res.json();
+        setIssData(d);
+
+        const [x, y, z] = latLonToXYZ(d.latitude, d.longitude, d.altitude);
+
+        // Update marker
+        const marker = issMarkerRef.current;
+        if (marker) {
+          const pos = marker.geometry.getAttribute("position");
+          pos.setXYZ(0, x, y, z);
+          pos.needsUpdate = true;
+          marker.visible = true;
+        }
+
+        // Update past trail
+        const trailRef = issTrailRef.current;
+        if (trailRef) {
+          trailRef.history.push([x, y, z]);
+          if (trailRef.history.length > ISS_TRAIL_LEN) trailRef.history.shift();
+          const count = trailRef.history.length;
+          const posArr = trailRef.mesh.geometry.getAttribute("position").array;
+          const colArr = trailRef.mesh.geometry.getAttribute("color").array;
+          for (let i = 0; i < count; i++) {
+            const [tx, ty, tz] = trailRef.history[i];
+            const fade = (i + 1) / count;
+            posArr[i * 3]     = tx; posArr[i * 3 + 1] = ty; posArr[i * 3 + 2] = tz;
+            colArr[i * 3]     = ISS_COLOR.r * fade;
+            colArr[i * 3 + 1] = ISS_COLOR.g * fade;
+            colArr[i * 3 + 2] = ISS_COLOR.b * fade;
+          }
+          trailRef.mesh.geometry.getAttribute("position").needsUpdate = true;
+          trailRef.mesh.geometry.getAttribute("color").needsUpdate = true;
+          trailRef.mesh.geometry.setDrawRange(0, count);
+        }
+      } catch (e) {
+        console.warn("ISS poll failed:", e);
+      }
+    }
+
+    fetchTLE();
+    pollISS();
+    const id = setInterval(pollISS, 5000);
+    return () => clearInterval(id);
+  }, []);
+
   // Highlight selected satellite
   useEffect(() => {
     const earth = earthRef.current;
@@ -550,6 +694,33 @@ export default function App() {
           ))}
         </div>
       )}
+      {/* ISS Tracker Panel */}
+      <div style={{ position: "absolute", bottom: 24, right: 24, background: "#020818dd", border: "1px solid #FFD70044", borderRadius: 8, padding: "18px 22px", backdropFilter: "blur(10px)", minWidth: 230 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#FFD700", boxShadow: "0 0 8px #FFD700" }} />
+          <div style={{ color: "#FFD700", fontSize: 11, fontWeight: "bold", letterSpacing: 3 }}>ISS TRACKER</div>
+        </div>
+        <div style={{ color: "#FFD70055", fontSize: 10, letterSpacing: 2, marginBottom: 14 }}>INTERNATIONAL SPACE STATION</div>
+        {issData ? (
+          <>
+            {[
+              ["ALTITUDE",  `${Number(issData.altitude).toFixed(1)} km`],
+              ["VELOCITY",  `${Number(issData.velocity).toFixed(2)} km/s`],
+              ["LATITUDE",  `${Number(issData.latitude).toFixed(4)}°`],
+              ["LONGITUDE", `${Number(issData.longitude).toFixed(4)}°`],
+              ["STATUS",    issData.visibility === "daylight" ? "DAYLIGHT" : "ECLIPSE"],
+            ].map(([label, value]) => (
+              <div key={label} style={{ marginBottom: 9 }}>
+                <div style={{ color: "#FFD70066", fontSize: 10, letterSpacing: 2 }}>{label}</div>
+                <div style={{ color: "#FFD700", fontSize: 13, marginTop: 2 }}>{value}</div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <div style={{ color: "#FFD70066", fontSize: 11, letterSpacing: 1 }}>ACQUIRING SIGNAL...</div>
+        )}
+      </div>
+
       <Analytics />
     </div>
   );
