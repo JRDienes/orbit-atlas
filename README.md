@@ -70,8 +70,8 @@ Space-Track.org API (U.S. Space Force)
 - [x] Vercel Web Analytics
 
 ### Satellite Categories & Filtering
-- [x] 14 operator categories with country-representative colors (SpaceX/Starlink, Amazon Kuiper, US, UK, Europe/ESA, Russia, China, Japan, India, Middle East, Asia Pacific, Rest of World, Debris, Rocket Bodies)
-- [x] Name-based detection for Starlink and Kuiper constellations
+- [x] 15 operator categories with country-representative colors (SpaceX/Starlink, Amazon Kuiper, AST SpaceMobile, US, UK, Europe/ESA, Russia, China, Japan, India, Middle East, Asia Pacific, Rest of World, Debris, Rocket Bodies)
+- [x] Name-based detection for Starlink, Kuiper, and AST SpaceMobile (BLUEBIRD/SPACEMOBILE) constellations
 - [x] Left sidebar toggle filters — active/dimmed states
 - [x] Country code key panel — always visible, shows codes per active category
 - [x] Click any country code chip to filter to that nation's satellites only
@@ -104,14 +104,15 @@ Space-Track.org API (U.S. Space Force)
 ## 🚧 Roadmap
 
 ### 🌐 Globe & Visualization
-- [ ] Real TLE-based positioning using satellite.js
-- [ ] Real-time orbital propagation (update positions every 30s)
+- [x] Real TLE-based positioning using satellite.js — one-time SGP4 propagation at page load
+- [x] Animated satellite movement along orbital paths — Keplerian theta propagation, chunked per-frame updates
+- [x] Simulation speed slider — PAUSE, 1×, 60×, 600×, 3600× presets with Earth rotation locked to same timescale
+- [ ] Real-time orbital propagation (update positions every 30s via full SGP4)
 - [ ] Level of detail (LOD) — fewer points when zoomed out
 - [ ] Full 27,000+ object rendering including debris
 
 ### 🛰️ Satellite Detail & Interaction
 - [ ] Search bar to find satellite by name or NORAD ID
-- [ ] Animated satellite movement along orbital paths
 - [ ] Mobile touch support (pinch to zoom, drag to rotate)
 
 ### 🔭 Space Telescopes

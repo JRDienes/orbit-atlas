@@ -10,8 +10,9 @@ const supabase = createClient(
 );
 
 export const CATEGORIES = [
-  { id: "starlink",      label: "SpaceX / Starlink", color: "#00D4FF" }, // SpaceX cyan
-  { id: "kuiper",        label: "Amazon Kuiper",      color: "#FF9900" }, // Amazon orange
+  { id: "starlink",       label: "SpaceX / Starlink",   color: "#00D4FF" }, // SpaceX cyan
+  { id: "kuiper",         label: "Amazon Kuiper",       color: "#FF9900" }, // Amazon orange
+  { id: "ast_spacemobile", label: "AST SpaceMobile",   color: "#CC44FF" }, // AST purple
   { id: "us",            label: "United States",      color: "#4488FF" }, // US flag blue
   { id: "uk",            label: "United Kingdom",     color: "#FF2244" }, // Union Jack red
   { id: "europe",        label: "Europe / ESA",       color: "#FFEE00" }, // EU flag gold
@@ -27,8 +28,9 @@ export const CATEGORIES = [
 ];
 
 const CATEGORY_CODES = {
-  starlink:      ["Name: STARLINK"],
-  kuiper:        ["Name: KUIPER"],
+  starlink:       ["Name: STARLINK"],
+  kuiper:         ["Name: KUIPER"],
+  ast_spacemobile: ["Name: BLUEBIRD", "Name: SPACEMOBILE"],
   us:            ["US", "CA", "AUS", "NZ", "GLOB", "ORB", "O3B", "ITSO"],
   uk:            ["UK", "IM"],
   europe:        ["FR", "GER", "IT", "SPN", "NOR", "SWED", "BEL", "NETH", "SWTZ", "DEN",
@@ -53,6 +55,7 @@ function categorize(sat) {
   // Name-based constellations — exclusive, checked first
   if (name.includes("STARLINK")) return "starlink";
   if (name.includes("KUIPER")) return "kuiper";
+  if (name.includes("BLUEBIRD") || name.includes("SPACEMOBILE")) return "ast_spacemobile";
 
   // Object type
   if (type === "DEBRIS") return "debris";
@@ -134,6 +137,10 @@ export default function App() {
   const issTrailRef = useRef(null);
   const issFutureRef = useRef(null);
   const issSatrecRef = useRef(null);
+  const chunkIdxRef = useRef(0);
+  const lastFrameTimeRef = useRef(null);
+  const timeScaleRef = useRef(60);
+  const [timeScale, setTimeScale] = useState(60);
 
   // Fade out loading overlay once data is ready
   useEffect(() => {
@@ -298,12 +305,42 @@ export default function App() {
     window.addEventListener("wheel", onWheel);
 
     // Animation loop
+    const CHUNK = 3000;
     const animate = () => {
       requestAnimationFrame(animate);
-      if (!isDragging) { earth.rotation.y += 0.0002; wire.rotation.y += 0.0002; }
+      if (!isDragging) { earth.rotation.y += 0.0000012 * timeScaleRef.current; wire.rotation.y += 0.0000012 * timeScaleRef.current; }
       if (issMarkerRef.current?.material) {
         issMarkerRef.current.material.size = 0.030 + Math.sin(Date.now() * 0.003) * 0.010;
       }
+
+      // Advance satellite positions in chunks
+      const frameTime = performance.now();
+      const dt = lastFrameTimeRef.current ? Math.min(frameTime - lastFrameTimeRef.current, 100) * timeScaleRef.current : 0;
+      lastFrameTimeRef.current = frameTime;
+      const { geo: pGeo, satObjects: pSats } = pointsRef.current;
+      if (pGeo && pSats?.length && dt > 0) {
+        const pa = pGeo.getAttribute("position");
+        const start = chunkIdxRef.current;
+        const end = Math.min(start + CHUNK, pSats.length);
+        for (let i = start; i < end; i++) {
+          const s = pSats[i];
+          if (!s.angularSpeed) continue;
+          s.theta += s.angularSpeed * dt;
+          const xOrb = s.a * Math.cos(s.theta) - s.c;
+          const zOrb = s.b * Math.sin(s.theta);
+          // Same Keplerian math as orbit lines — both are Earth-local children of earth mesh
+          const nx = xOrb * s.cosR - zOrb * s.cosI * s.sinR;
+          const ny = zOrb * s.sinI;
+          const nz = xOrb * s.sinR + zOrb * s.cosI * s.cosR;
+          pa.array[i * 3]     = nx;
+          pa.array[i * 3 + 1] = ny;
+          pa.array[i * 3 + 2] = nz;
+          s.x = nx; s.y = ny; s.z = nz;
+        }
+        pa.needsUpdate = true;
+        chunkIdxRef.current = end >= pSats.length ? 0 : end;
+      }
+
       renderer.render(scene, camera);
     };
     animate();
@@ -345,17 +382,59 @@ export default function App() {
       const colors = [];
       const satObjects = [];
 
+      const now = new Date();
+      const gmst = satellite.gstime(now);
+
       data.forEach((sat) => {
-        if (!sat.inclination || !sat.apoapsis) return;
+        let x, y, z, lon;
+        let usedTLE = false;
 
-        const inc = (sat.inclination * Math.PI) / 180;
-        const alt = altToRadius(sat.apoapsis);
-        const lon = Math.random() * Math.PI * 2;
-        const lat = (Math.random() - 0.5) * inc * 2;
+        // TLE-based positioning — propagate to current time
+        if (sat.tle_line1 && sat.tle_line2) {
+          try {
+            const satrec = satellite.twoline2satrec(sat.tle_line1.trim(), sat.tle_line2.trim());
+            const pv = satellite.propagate(satrec, now);
+            if (pv?.position && !isNaN(pv.position.x)) {
+              const geo = satellite.eciToGeodetic(pv.position, gmst);
+              const latDeg = satellite.degreesLat(geo.latitude);
+              const lonDeg = satellite.degreesLong(geo.longitude);
+              [x, y, z] = latLonToXYZ(latDeg, lonDeg, geo.height);
+              lon = (lonDeg * Math.PI) / 180;
+              usedTLE = true;
+            }
+          } catch (e) { /* fall through */ }
+        }
 
-        const x = alt * Math.cos(lat) * Math.cos(lon);
-        const y = alt * Math.sin(lat);
-        const z = alt * Math.cos(lat) * Math.sin(lon);
+        // Fallback: random placement within orbital parameters
+        if (x === undefined) {
+          if (!sat.inclination || !sat.apoapsis) return;
+          const inc = (sat.inclination * Math.PI) / 180;
+          const alt = altToRadius(sat.apoapsis);
+          lon = Math.random() * Math.PI * 2;
+          const lat = (Math.random() - 0.5) * inc * 2;
+          x = alt * Math.cos(lat) * Math.cos(lon);
+          y = alt * Math.sin(lat);
+          z = alt * Math.cos(lat) * Math.sin(lon);
+        }
+
+        // Orbital animation parameters (Keplerian ellipse)
+        const inc0 = sat.inclination ? (sat.inclination * Math.PI) / 180 : 0;
+        const sinI = Math.sin(inc0), cosI = Math.cos(inc0);
+        const sinR = Math.sin(lon),  cosR = Math.cos(lon);
+        const rApo  = altToRadius(sat.apoapsis  ?? 400);
+        const rPeri = altToRadius(sat.periapsis ?? sat.apoapsis ?? 400);
+        const a = (rApo + rPeri) / 2;
+        const c = (rApo - rPeri) / 2;
+        const b = Math.sqrt(Math.max(0, a * a - c * c));
+        // Derive initial theta from current position (inverse of orbit-trace math)
+        const xOrb = x * cosR + z * sinR;
+        const zeq  = -x * sinR + z * cosR;
+        const zOrb = Math.abs(sinI) > 0.1 ? y / sinI : zeq / (cosI || 1);
+        const theta = Math.atan2(zOrb / (b || 1), (xOrb + c) / (a || 1));
+        // Only animate sats whose position came from TLE propagation
+        const angularSpeed = (usedTLE && sat.period > 0)
+          ? (2 * Math.PI) / (sat.period * 60 * 1000)
+          : 0;
 
         const cat = categorize(sat);
         const hex = CATEGORIES.find(c => c.id === cat)?.color || "#ffffff";
@@ -363,11 +442,13 @@ export default function App() {
 
         positions.push(x, y, z);
         colors.push(color.r, color.g, color.b);
-        satObjects.push({ ...sat, category: cat, lon, x, y, z });
+        satObjects.push({ ...sat, category: cat, lon, x, y, z, theta, angularSpeed, a, b, c, sinI, cosI, sinR, cosR });
       });
 
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+      posAttr.setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute("position", posAttr);
       geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
 
       const mat = new THREE.PointsMaterial({
@@ -840,6 +921,30 @@ export default function App() {
           ))}
         </div>
       )}
+      {/* Speed Control */}
+      <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", textAlign: "center", minWidth: 260 }}>
+        <div style={{ color: "#00d4ff", fontSize: 10, letterSpacing: 3, marginBottom: 8 }}>SIMULATION SPEED</div>
+        <input
+          type="range" min="0" max="3600" step="10" value={timeScale}
+          onChange={e => { const v = Number(e.target.value); setTimeScale(v); timeScaleRef.current = v; }}
+          style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 8 }}
+        />
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8 }}>
+          {[["PAUSE", 0], ["1×", 1], ["60×", 60], ["600×", 600], ["3600×", 3600]].map(([label, val]) => (
+            <div
+              key={val}
+              onClick={() => { setTimeScale(val); timeScaleRef.current = val; }}
+              style={{ background: timeScale === val ? "#00d4ff33" : "transparent", border: `1px solid ${timeScale === val ? "#00d4ff" : "#00d4ff44"}`, borderRadius: 4, color: timeScale === val ? "#00d4ff" : "#00d4ff88", fontSize: 10, padding: "3px 8px", letterSpacing: 1, cursor: "pointer" }}
+            >
+              {label}
+            </div>
+          ))}
+        </div>
+        <div style={{ color: "#00d4ff", fontSize: 12, letterSpacing: 2 }}>
+          {timeScale === 0 ? "PAUSED" : timeScale === 1 ? "REAL TIME" : `${timeScale}×`}
+        </div>
+      </div>
+
       {/* ISS Tracker Panel */}
       <div style={{ position: "absolute", bottom: 24, right: 24, background: "#020818dd", border: "1px solid #FFD70044", borderRadius: 8, padding: "18px 22px", backdropFilter: "blur(10px)", minWidth: 230 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
