@@ -143,6 +143,7 @@ export default function App() {
   const [timeScale, setTimeScale] = useState(60);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [mobileTab, setMobileTab] = useState(null);
+  const mobileTabRef = useRef(null);
 
   // Fade out loading overlay once data is ready
   useEffect(() => {
@@ -159,6 +160,9 @@ export default function App() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  // Keep mobileTabRef in sync so touch handlers can read current value
+  useEffect(() => { mobileTabRef.current = mobileTab; }, [mobileTab]);
 
   // Auto-open object tab when satellite selected on mobile
   useEffect(() => {
@@ -354,7 +358,7 @@ export default function App() {
       }
     };
     const onTouchEnd = e => {
-      if (!dragMoved && e.changedTouches.length === 1) {
+      if (!dragMoved && e.changedTouches.length === 1 && !mobileTabRef.current) {
         performTapSelect(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
       }
       isDragging = false;
