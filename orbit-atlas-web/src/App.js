@@ -128,7 +128,11 @@ export default function App() {
   const [overlayFading, setOverlayFading] = useState(false);
   const [visibleCount, setVisibleCount] = useState(0);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [welcomeVisible, setWelcomeVisible] = useState(false);
   const [welcomeExiting, setWelcomeExiting] = useState(false);
+  const [welcomeMinTimeDone, setWelcomeMinTimeDone] = useState(false);
+  // Only show welcome on first visit per session — refreshes skip it
+  const isFirstVisitRef = useRef(!sessionStorage.getItem('orbit-welcomed'));
   const [issData, setIssData] = useState(null);
   const satsRef = useRef([]);
   const pointsRef = useRef([]);
@@ -151,24 +155,36 @@ export default function App() {
   const mobileTabRef = useRef(null);
   const isMobileRef = useRef(window.innerWidth < 768);
 
-  // Fade out loading overlay once data is ready, then show welcome message
+  // Fade out loading overlay, then show welcome on first visit only
   useEffect(() => {
     if (!loading) {
       setOverlayFading(true);
       const t1 = setTimeout(() => setShowOverlay(false), 900);
-      const t2 = setTimeout(() => setShowWelcome(true), 900);
+      // Start welcome at 600ms so it fades in as the overlay finishes clearing
+      const t2 = setTimeout(() => {
+        if (isFirstVisitRef.current) setShowWelcome(true);
+      }, 600);
       return () => { clearTimeout(t1); clearTimeout(t2); };
     }
   }, [loading]);
 
-  // Animate welcome message out when satellites arrive
+  // Mark session as seen, trigger fade-in, and enforce a minimum 2.5s display time
   useEffect(() => {
-    if (visibleCount > 0 && showWelcome) {
+    if (!showWelcome) return;
+    sessionStorage.setItem('orbit-welcomed', '1');
+    const t1 = setTimeout(() => setWelcomeVisible(true), 20);
+    const t2 = setTimeout(() => setWelcomeMinTimeDone(true), 2500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [showWelcome]);
+
+  // Exit only when BOTH min time has elapsed AND satellites have loaded
+  useEffect(() => {
+    if (showWelcome && welcomeMinTimeDone && visibleCount > 0) {
       setWelcomeExiting(true);
       const t = setTimeout(() => setShowWelcome(false), 800);
       return () => clearTimeout(t);
     }
-  }, [visibleCount, showWelcome]);
+  }, [welcomeMinTimeDone, visibleCount, showWelcome]);
 
   // Track mobile breakpoint
   useEffect(() => {
@@ -870,8 +886,8 @@ export default function App() {
           position: "absolute", top: isMobile ? "15%" : "17%", left: "50%",
           transform: "translateX(-50%)", textAlign: "center",
           pointerEvents: "none", zIndex: 100,
-          opacity: welcomeExiting ? 0 : 1,
-          transition: "opacity 0.7s ease",
+          opacity: welcomeVisible && !welcomeExiting ? 1 : 0,
+          transition: "opacity 0.4s ease",
         }}>
           <div style={{ color: "#00d4ff", fontSize: isMobile ? 16 : 22, fontWeight: "bold", letterSpacing: isMobile ? 3 : 6 }}>WELCOME TO ORBIT ATLAS</div>
           <div style={{ color: "#00d4ff55", fontSize: isMobile ? 10 : 11, letterSpacing: 3, marginTop: 6 }}>INITIALIZING SATELLITE POSITIONS</div>
