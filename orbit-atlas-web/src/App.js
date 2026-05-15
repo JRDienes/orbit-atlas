@@ -127,6 +127,8 @@ export default function App() {
   const [showOverlay, setShowOverlay] = useState(true);
   const [overlayFading, setOverlayFading] = useState(false);
   const [visibleCount, setVisibleCount] = useState(0);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [welcomeExiting, setWelcomeExiting] = useState(false);
   const [issData, setIssData] = useState(null);
   const satsRef = useRef([]);
   const pointsRef = useRef([]);
@@ -139,6 +141,8 @@ export default function App() {
   const issFutureRef = useRef(null);
   const issSatrecRef = useRef(null);
   const chunkIdxRef = useRef(0);
+  const activeWorkerRef = useRef(null);
+  const introTimeoutsRef = useRef([]);
   const lastFrameTimeRef = useRef(null);
   const timeScaleRef = useRef(60);
   const [timeScale, setTimeScale] = useState(60);
@@ -147,14 +151,24 @@ export default function App() {
   const mobileTabRef = useRef(null);
   const isMobileRef = useRef(window.innerWidth < 768);
 
-  // Fade out loading overlay once data is ready
+  // Fade out loading overlay once data is ready, then show welcome message
   useEffect(() => {
     if (!loading) {
       setOverlayFading(true);
-      const t = setTimeout(() => setShowOverlay(false), 900);
-      return () => clearTimeout(t);
+      const t1 = setTimeout(() => setShowOverlay(false), 900);
+      const t2 = setTimeout(() => setShowWelcome(true), 900);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
     }
   }, [loading]);
+
+  // Animate welcome message out when satellites arrive
+  useEffect(() => {
+    if (visibleCount > 0 && showWelcome) {
+      setWelcomeExiting(true);
+      const t = setTimeout(() => setShowWelcome(false), 800);
+      return () => clearTimeout(t);
+    }
+  }, [visibleCount, showWelcome]);
 
   // Track mobile breakpoint
   useEffect(() => {
@@ -384,6 +398,11 @@ export default function App() {
       if (issMarkerRef.current?.material) {
         issMarkerRef.current.material.size = 0.030 + Math.sin(Date.now() * 0.003) * 0.010;
       }
+      // Fade satellite points in after worker delivers them
+      const pMat = pointsRef.current?.mat;
+      if (pMat && pMat.opacity < 1) {
+        pMat.opacity = Math.min(1, pMat.opacity + 0.04);
+      }
 
       // Advance satellite positions in chunks
       const frameTime = performance.now();
@@ -427,7 +446,6 @@ export default function App() {
 
     // Load satellites from Supabase
     async function loadSats() {
-      setLoading(true);
       const pageSize = 1000;
       const COLS = "norad_cat_id, object_name, object_type, country_code, inclination, apoapsis, periapsis, period, launch_date, tle_line1, tle_line2";
 
@@ -458,100 +476,48 @@ export default function App() {
       const results = await Promise.all(fetches);
       const data = results.flatMap(r => r.data ?? []);
 
-      satsRef.current = data.map(s => ({ ...s, category: categorize(s) }));
+      // Hand off all the heavy SGP4 math to a background worker so the main
+      // thread stays free to respond to user input while positions are computed.
+      const worker = new Worker(new URL("./satWorker.js", import.meta.url));
+      activeWorkerRef.current = worker;
 
-      // Build a single Points geometry for all satellites
-      const positions = [];
-      const colors = [];
-      const satObjects = [];
+      worker.onmessage = ({ data: { posArr, colArr, satObjects } }) => {
+        satsRef.current = satObjects;
 
-      const now = new Date();
-      const gmst = satellite.gstime(now);
+        const geo = new THREE.BufferGeometry();
+        const posAttr = new THREE.Float32BufferAttribute(posArr, 3);
+        posAttr.setUsage(THREE.DynamicDrawUsage);
+        geo.setAttribute("position", posAttr);
+        geo.setAttribute("color", new THREE.Float32BufferAttribute(colArr, 3));
 
-      data.forEach((sat) => {
-        let x, y, z, lon;
-        let usedTLE = false;
+        const mat = new THREE.PointsMaterial({
+          size: 0.008,
+          vertexColors: true,
+          sizeAttenuation: true,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          depthTest: true,
+        });
 
-        // TLE-based positioning — propagate to current time
-        if (sat.tle_line1 && sat.tle_line2) {
-          try {
-            const satrec = satellite.twoline2satrec(sat.tle_line1.trim(), sat.tle_line2.trim());
-            const pv = satellite.propagate(satrec, now);
-            if (pv?.position && !isNaN(pv.position.x)) {
-              const geo = satellite.eciToGeodetic(pv.position, gmst);
-              const latDeg = satellite.degreesLat(geo.latitude);
-              const lonDeg = satellite.degreesLong(geo.longitude);
-              [x, y, z] = latLonToXYZ(latDeg, lonDeg, geo.height);
-              lon = (lonDeg * Math.PI) / 180;
-              usedTLE = true;
-            }
-          } catch (e) { /* fall through */ }
-        }
+        const points = new THREE.Points(geo, mat);
+        points.frustumCulled = false;
+        points.renderOrder = 1;
+        earth.add(points);
+        pointsRef.current = { geo, mat, satObjects, colors: Array.from(colArr), points };
 
-        // Fallback: random placement within orbital parameters
-        if (x === undefined) {
-          if (!sat.inclination || !sat.apoapsis) return;
-          const inc = (sat.inclination * Math.PI) / 180;
-          const alt = altToRadius(sat.apoapsis);
-          lon = Math.random() * Math.PI * 2;
-          const lat = (Math.random() - 0.5) * inc * 2;
-          x = alt * Math.cos(lat) * Math.cos(lon);
-          y = alt * Math.sin(lat);
-          z = alt * Math.cos(lat) * Math.sin(lon);
-        }
+        setVisibleCount(satObjects.length);
+        worker.terminate();
+        activeWorkerRef.current = null;
+      };
 
-        // Orbital animation parameters (Keplerian ellipse)
-        const inc0 = sat.inclination ? (sat.inclination * Math.PI) / 180 : 0;
-        const sinI = Math.sin(inc0), cosI = Math.cos(inc0);
-        const sinR = Math.sin(lon),  cosR = Math.cos(lon);
-        const rApo  = altToRadius(sat.apoapsis  ?? 400);
-        const rPeri = altToRadius(sat.periapsis ?? sat.apoapsis ?? 400);
-        const a = (rApo + rPeri) / 2;
-        const c = (rApo - rPeri) / 2;
-        const b = Math.sqrt(Math.max(0, a * a - c * c));
-        // Derive initial theta from current position (inverse of orbit-trace math)
-        const xOrb = x * cosR + z * sinR;
-        const zeq  = -x * sinR + z * cosR;
-        const zOrb = Math.abs(sinI) > 0.1 ? y / sinI : zeq / (cosI || 1);
-        const theta = Math.atan2(zOrb / (b || 1), (xOrb + c) / (a || 1));
-        // Only animate sats whose position came from TLE propagation
-        const angularSpeed = (usedTLE && sat.period > 0)
-          ? (2 * Math.PI) / (sat.period * 60 * 1000)
-          : 0;
+      worker.onerror = (e) => {
+        console.error("satWorker error:", e);
+        setLoading(false);
+      };
 
-        const cat = categorize(sat);
-        const hex = CATEGORIES.find(c => c.id === cat)?.color || "#ffffff";
-        const color = new THREE.Color(hex);
-
-        positions.push(x, y, z);
-        colors.push(color.r, color.g, color.b);
-        satObjects.push({ ...sat, category: cat, lon, x, y, z, theta, angularSpeed, a, b, c, sinI, cosI, sinR, cosR });
-      });
-
-      const geo = new THREE.BufferGeometry();
-      const posAttr = new THREE.Float32BufferAttribute(positions, 3);
-      posAttr.setUsage(THREE.DynamicDrawUsage);
-      geo.setAttribute("position", posAttr);
-      geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-
-      const mat = new THREE.PointsMaterial({
-        size: 0.008,
-        vertexColors: true,
-        sizeAttenuation: true,
-        transparent: true,
-        opacity: 1,
-        depthWrite: false,
-        depthTest: true,
-      });
-
-      const points = new THREE.Points(geo, mat);
-      points.frustumCulled = false;
-      points.renderOrder = 1;
-      earth.add(points);
-      pointsRef.current = { geo, mat, satObjects, colors: [...colors], points };
-
-      setVisibleCount(satsRef.current.length);
-      setLoading(false);
+      // Send raw Supabase rows to the worker — it handles all propagation
+      worker.postMessage({ sats: data });
     }
 
     // ISS marker
@@ -588,8 +554,15 @@ export default function App() {
     issFutureRef.current = issFutureMesh;
 
     loadSats();
+    setLoading(false);
 
     return () => {
+      if (activeWorkerRef.current) {
+        activeWorkerRef.current.terminate();
+        activeWorkerRef.current = null;
+      }
+      introTimeoutsRef.current.forEach(clearTimeout);
+      introTimeoutsRef.current = [];
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("mousemove", onMouseMove);
@@ -890,6 +863,20 @@ export default function App() {
 
       {/* Globe */}
       <div ref={mountRef} style={{ position: "absolute", inset: 0, touchAction: "none" }} />
+
+      {/* Welcome message — visible between loading screen and satellite fade-in */}
+      {showWelcome && (
+        <div style={{
+          position: "absolute", top: isMobile ? "15%" : "17%", left: "50%",
+          transform: "translateX(-50%)", textAlign: "center",
+          pointerEvents: "none", zIndex: 100,
+          opacity: welcomeExiting ? 0 : 1,
+          transition: "opacity 0.7s ease",
+        }}>
+          <div style={{ color: "#00d4ff", fontSize: isMobile ? 16 : 22, fontWeight: "bold", letterSpacing: isMobile ? 3 : 6 }}>WELCOME TO ORBIT ATLAS</div>
+          <div style={{ color: "#00d4ff55", fontSize: isMobile ? 10 : 11, letterSpacing: 3, marginTop: 6 }}>INITIALIZING SATELLITE POSITIONS</div>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: isMobile ? "12px 16px" : "20px 30px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #00d4ff22", background: "linear-gradient(180deg, #020818 0%, transparent 100%)" }}>

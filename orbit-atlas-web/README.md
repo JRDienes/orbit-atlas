@@ -64,10 +64,13 @@ Space-Track.org API (U.S. Space Force)
 - [x] Points geometry rendering (21,000+ satellites, single draw call)
 - [x] Logarithmic altitude scale — LEO / MEO / GEO visually distinct
 - [x] Animated loading screen with fade-out once data is ready
+- [x] Globe reveals instantly — satellites fade in after worker completes
+- [x] Welcome message shown between loading screen and satellite reveal
 - [x] Dynamic object count in header based on active filters
 - [x] Smooth satellite occlusion behind Earth
 - [x] Vercel deployment with auto-deploy on push
 - [x] Vercel Web Analytics
+- [x] Vercel Speed Insights
 
 ### Satellite Categories & Filtering
 - [x] 15 operator categories with country-representative colors (SpaceX/Starlink, Amazon Kuiper, AST SpaceMobile, US, UK, Europe/ESA, Russia, China, Japan, India, Middle East, Asia Pacific, Rest of World, Debris, Rocket Bodies)
@@ -109,8 +112,8 @@ Space-Track.org API (U.S. Space Force)
 - [x] Simulation speed slider — PAUSE, 1×, 60×, 600×, 3600× presets
 - [x] Earth texture served locally — eliminates external CDN dependency
 - [x] WebGL pixel ratio capped at 2× — reduces GPU load on high-DPR devices
-- [ ] Web Worker for SGP4 propagation — unblock main thread during initial load
-- [ ] Parallel Supabase page fetches — reduce total data load time
+- [x] Web Worker for SGP4 propagation — main thread unblocked during satellite load
+- [x] Parallel Supabase page fetches via Promise.all — all pages in-flight simultaneously
 - [ ] Real-time orbital propagation — update all dot positions every 30s via full SGP4
 - [ ] Full 27,000+ object rendering with debris toggle
 - [ ] Level of detail (LOD) — fewer points when zoomed out
@@ -146,7 +149,7 @@ Space-Track.org API (U.S. Space Force)
 | Data Pipeline | Python 3.11, requests, python-dotenv |
 | Scheduling | GitHub Actions (weekly cron) |
 | Deployment | Vercel |
-| Analytics | Vercel Web Analytics |
+| Analytics | Vercel Web Analytics, Vercel Speed Insights |
 | Data Source | Space-Track.org (U.S. Space Force) |
 
 ---
