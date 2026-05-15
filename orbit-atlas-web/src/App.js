@@ -428,24 +428,35 @@ export default function App() {
     // Load satellites from Supabase
     async function loadSats() {
       setLoading(true);
-      let allData = [];
-      let page = 0;
       const pageSize = 1000;
+      const COLS = "norad_cat_id, object_name, object_type, country_code, inclination, apoapsis, periapsis, period, launch_date, tle_line1, tle_line2";
 
-      while (true) {
-        const { data: pageData, error: pageError } = await supabase
+      // Ask Supabase for the total row count using head:true — sends no rows,
+      // just reads the Content-Range header which contains the total count.
+      const { count } = await supabase
+        .from("satellites")
+        .select("*", { count: "exact", head: true })
+        .neq("object_type", "DEBRIS");
+
+      const totalPages = Math.ceil((count || 0) / pageSize);
+
+      // Build one fetch promise per page. Array.from with a mapping function is
+      // a clean way to generate [0, 1, 2, ..., totalPages-1] and immediately
+      // transform each index into a Supabase query. At this point the requests
+      // haven't fired yet — they're just Promise objects sitting in an array.
+      const fetches = Array.from({ length: totalPages }, (_, i) =>
+        supabase
           .from("satellites")
-          .select("norad_cat_id, object_name, object_type, country_code, inclination, apoapsis, periapsis, period, launch_date, tle_line1, tle_line2")
+          .select(COLS)
           .neq("object_type", "DEBRIS")
-          .range(page * pageSize, (page + 1) * pageSize - 1);
+          .range(i * pageSize, (i + 1) * pageSize - 1)
+      );
 
-        if (pageError || !pageData || pageData.length === 0) break;
-        allData = [...allData, ...pageData];
-        if (pageData.length < pageSize) break;
-        page++;
-      }
-
-      const data = allData;
+      // Promise.all fires every request simultaneously, then waits until the
+      // last one lands. Total wait = slowest single page, not the sum of all pages.
+      // flatMap collapses [[page0rows], [page1rows], ...] into one flat array.
+      const results = await Promise.all(fetches);
+      const data = results.flatMap(r => r.data ?? []);
 
       satsRef.current = data.map(s => ({ ...s, category: categorize(s) }));
 
