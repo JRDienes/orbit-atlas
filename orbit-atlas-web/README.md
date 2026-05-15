@@ -103,9 +103,14 @@ Space-Track.org API (U.S. Space Force)
 ## 🚧 Roadmap
 
 ### Performance
+- **Target: 90 Real Experience Score on Vercel Speed Insights** (currently 70)
 - [x] Real TLE-based positioning using satellite.js — one-time SGP4 propagation at page load
 - [x] Animated satellite movement along orbital paths — Keplerian theta propagation, chunked per-frame updates
 - [x] Simulation speed slider — PAUSE, 1×, 60×, 600×, 3600× presets
+- [x] Earth texture served locally — eliminates external CDN dependency
+- [x] WebGL pixel ratio capped at 2× — reduces GPU load on high-DPR devices
+- [ ] Web Worker for SGP4 propagation — unblock main thread during initial load
+- [ ] Parallel Supabase page fetches — reduce total data load time
 - [ ] Real-time orbital propagation — update all dot positions every 30s via full SGP4
 - [ ] Full 27,000+ object rendering with debris toggle
 - [ ] Level of detail (LOD) — fewer points when zoomed out
