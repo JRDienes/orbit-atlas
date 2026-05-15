@@ -191,14 +191,14 @@ export default function App() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     mountRef.current.appendChild(renderer.domElement);
 
     // Earth globe
     const earthGeo = new THREE.SphereGeometry(0.98, 64, 64);
     const textureLoader = new THREE.TextureLoader();
     const earthTexture = textureLoader.load(
-      "https://unpkg.com/three-globe/example/img/earth-dark.jpg"
+      "/earth-dark.jpg"
     );
     const earthMat = new THREE.MeshPhongMaterial({
       map: earthTexture,
