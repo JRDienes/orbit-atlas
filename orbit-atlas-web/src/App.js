@@ -520,7 +520,7 @@ export default function App() {
         points.frustumCulled = false;
         points.renderOrder = 1;
         earth.add(points);
-        pointsRef.current = { geo, mat, satObjects, colors: Array.from(colArr), points };
+        pointsRef.current = { geo, mat, satObjects, points };
 
         setVisibleCount(satObjects.length);
         worker.terminate();
@@ -626,13 +626,20 @@ export default function App() {
       return selectedInCat.length === 0 || selectedInCat.includes(sat.country_code);
     };
 
+    // Pre-computed RGB per category — avoids allocating a new THREE.Color per satellite
+    const catRGB = Object.fromEntries(
+      CATEGORIES.map(cat => {
+        const c = new THREE.Color(cat.color);
+        return [cat.id, [c.r, c.g, c.b]];
+      })
+    );
+
     // Update dot colors
     const newColors = [];
     satObjects.forEach((sat) => {
       if (satVisible(sat)) {
-        const hex = CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff";
-        const color = new THREE.Color(hex);
-        newColors.push(color.r, color.g, color.b);
+        const [r, g, b] = catRGB[sat.category] || [1, 1, 1];
+        newColors.push(r, g, b);
       } else {
         newColors.push(0.05, 0.05, 0.1);
       }
