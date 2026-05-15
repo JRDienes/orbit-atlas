@@ -59,8 +59,8 @@ Space-Track.org API (U.S. Space Force)
 ### Frontend / Globe
 - [x] Interactive 3D globe with Earth texture (NASA dark map)
 - [x] Military/HUD aesthetic — dark background, blue/green accents
-- [x] Drag to rotate, scroll to zoom
-- [x] Star field background, atmosphere glow, wireframe grid overlay
+- [x] Drag to rotate, scroll to zoom; pinch-to-zoom and drag-to-rotate on mobile
+- [x] Atmosphere glow, wireframe grid overlay
 - [x] Points geometry rendering (21,000+ satellites, single draw call)
 - [x] Logarithmic altitude scale — LEO / MEO / GEO visually distinct
 - [x] Animated loading screen with fade-out once data is ready
@@ -111,8 +111,9 @@ Space-Track.org API (U.S. Space Force)
 - [ ] Level of detail (LOD) — fewer points when zoomed out
 
 ### UI / UX
+- [x] Mobile responsive layout — bottom tab bar (FILTER / CODES / OBJECT / ISS / SPEED), bottom sheet panels, touch controls
+- [x] Tap to select satellite on mobile, badge indicators on active tabs
 - [ ] Search bar to find a satellite by name or NORAD ID
-- [ ] Mobile touch support (pinch to zoom, drag to rotate)
 
 ### ISS Enhancements
 - [ ] Crew manifest panel — current astronauts aboard

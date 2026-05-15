@@ -141,6 +141,8 @@ export default function App() {
   const lastFrameTimeRef = useRef(null);
   const timeScaleRef = useRef(60);
   const [timeScale, setTimeScale] = useState(60);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [mobileTab, setMobileTab] = useState(null);
 
   // Fade out loading overlay once data is ready
   useEffect(() => {
@@ -150,6 +152,18 @@ export default function App() {
       return () => clearTimeout(t);
     }
   }, [loading]);
+
+  // Track mobile breakpoint
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Auto-open object tab when satellite selected on mobile
+  useEffect(() => {
+    if (selected && isMobile) setMobileTab("object");
+  }, [selected, isMobile]);
 
   // Toggle category filter
   function toggleCategory(id) {
@@ -163,7 +177,7 @@ export default function App() {
     const scene = new THREE.Scene();
     sceneRef.current = scene;
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-    camera.position.z = 4.5;
+    camera.position.z = 7;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -204,16 +218,6 @@ export default function App() {
     dirLight.position.set(5, 3, 5);
     scene.add(dirLight);
 
-    // Stars background
-    const starGeo = new THREE.BufferGeometry();
-    const starVerts = [];
-    for (let i = 0; i < 8000; i++) {
-      starVerts.push((Math.random() - 0.5) * 500);
-      starVerts.push((Math.random() - 0.5) * 500);
-      starVerts.push((Math.random() - 0.5) * 500);
-    }
-    starGeo.setAttribute("position", new THREE.Float32BufferAttribute(starVerts, 3));
-    scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.3 })));
 
     // Shared raycaster
     const raycaster = new THREE.Raycaster();
@@ -303,6 +307,62 @@ export default function App() {
     // Zoom
     const onWheel = e => { camera.position.z = Math.min(9, Math.max(1.5, camera.position.z + e.deltaY * 0.005)); };
     window.addEventListener("wheel", onWheel);
+
+    // Touch — drag to rotate, pinch to zoom, tap to select
+    let lastTouchDist = null;
+    const performTapSelect = (clientX, clientY) => {
+      const { points, satObjects } = pointsRef.current;
+      if (!points || !satObjects) return;
+      const mouse = new THREE.Vector2(
+        (clientX / window.innerWidth) * 2 - 1,
+        -(clientY / window.innerHeight) * 2 + 1
+      );
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObject(points);
+      if (hits.length > 0) setSelected(satObjects[hits[0].index]);
+      else setSelected(null);
+    };
+    const onTouchStart = e => {
+      if (e.touches.length === 1) {
+        isDragging = true; dragMoved = false;
+        prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        mouseDownPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2) {
+        isDragging = false;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastTouchDist = Math.sqrt(dx * dx + dy * dy);
+      }
+    };
+    const onTouchMove = e => {
+      e.preventDefault();
+      if (e.touches.length === 1 && isDragging) {
+        const dx = e.touches[0].clientX - prevMouse.x;
+        const dy = e.touches[0].clientY - prevMouse.y;
+        if (Math.abs(e.touches[0].clientX - mouseDownPos.x) > 4 || Math.abs(e.touches[0].clientY - mouseDownPos.y) > 4) dragMoved = true;
+        earth.rotation.y += dx * 0.005;
+        earth.rotation.x += dy * 0.005;
+        wire.rotation.y = earth.rotation.y;
+        wire.rotation.x = earth.rotation.x;
+        prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2 && lastTouchDist !== null) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        camera.position.z = Math.min(9, Math.max(1.5, camera.position.z - (dist - lastTouchDist) * 0.01));
+        lastTouchDist = dist;
+      }
+    };
+    const onTouchEnd = e => {
+      if (!dragMoved && e.changedTouches.length === 1) {
+        performTapSelect(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      }
+      isDragging = false;
+      lastTouchDist = null;
+    };
+    window.addEventListener("touchstart", onTouchStart, { passive: false });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd);
 
     // Animation loop
     const CHUNK = 3000;
@@ -513,6 +573,9 @@ export default function App() {
       window.removeEventListener("click", onClick);
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
       document.body.style.cursor = "default";
       hoverGeo.dispose();
       hoverMat.dispose();
@@ -766,7 +829,7 @@ export default function App() {
   }, [selected]);
 
   return (
-    <div style={{ background: "#020818", width: "100vw", height: "100vh", overflow: "hidden", fontFamily: "'Courier New', monospace" }}>
+    <div style={{ background: "#020818", width: "100%", height: "100%", overflow: "hidden", position: "relative", fontFamily: "'Courier New', monospace" }}>
       {/* Loading overlay */}
       {showOverlay && (
         <>
@@ -803,174 +866,303 @@ export default function App() {
       )}
 
       {/* Globe */}
-      <div ref={mountRef} style={{ position: "absolute", inset: 0 }} />
+      <div ref={mountRef} style={{ position: "absolute", inset: 0, touchAction: "none" }} />
 
       {/* Header */}
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "20px 30px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #00d4ff22", background: "linear-gradient(180deg, #020818 0%, transparent 100%)" }}>
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: isMobile ? "12px 16px" : "20px 30px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #00d4ff22", background: "linear-gradient(180deg, #020818 0%, transparent 100%)" }}>
         <div>
-          <div style={{ color: "#00d4ff", fontSize: 22, fontWeight: "bold", letterSpacing: 4 }}>ORBIT ATLAS</div>
-          <div style={{ color: "#00ff8888", fontSize: 11, letterSpacing: 2 }}>SPACE OBJECT TRACKING SYSTEM</div>
+          <div style={{ color: "#00d4ff", fontSize: isMobile ? 16 : 22, fontWeight: "bold", letterSpacing: isMobile ? 2 : 4 }}>ORBIT ATLAS</div>
+          {!isMobile && <div style={{ color: "#00ff8888", fontSize: 11, letterSpacing: 2 }}>SPACE OBJECT TRACKING SYSTEM</div>}
         </div>
-        <div style={{ color: "#00d4ff88", fontSize: 12, letterSpacing: 2 }}>
-          {loading ? "LOADING OBJECTS..." : `${visibleCount.toLocaleString()} OBJECTS TRACKED`}
+        <div style={{ color: "#00d4ff88", fontSize: isMobile ? 10 : 12, letterSpacing: 2 }}>
+          {loading ? "LOADING..." : `${visibleCount.toLocaleString()} OBJECTS`}
         </div>
       </div>
 
-      {/* Left Column — filter + key */}
-      <div style={{ position: "absolute", top: "50%", left: 20, transform: "translateY(-50%)", display: "flex", flexDirection: "column", gap: 10, width: 220 }}>
-        {/* Filter Sidebar */}
-        <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "20px 16px", backdropFilter: "blur(10px)", minWidth: 200 }}>
-          <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16 }}>FILTER OBJECTS</div>
-          {CATEGORIES.map(cat => (
-            <div
-              key={cat.id}
-              onClick={() => toggleCategory(cat.id)}
-              style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: "pointer", opacity: active.length === 0 || active.includes(cat.id) ? 1 : 0.4, transition: "opacity 0.2s" }}
-            >
-              {/* Toggle switch */}
-              <div style={{ width: 36, height: 18, borderRadius: 9, background: active.includes(cat.id) ? cat.color : "#1a1a2e", border: `1px solid ${cat.color}`, transition: "background 0.2s", position: "relative" }}>
-                <div style={{ position: "absolute", top: 2, left: active.includes(cat.id) ? 18 : 2, width: 12, height: 12, borderRadius: "50%", background: active.includes(cat.id) ? "#020818" : cat.color, transition: "left 0.2s" }} />
-              </div>
-              <div style={{ color: cat.color, fontSize: 12, letterSpacing: 1 }}>{cat.label}</div>
-            </div>
-          ))}
-          <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 12 }}>
-            <div onClick={() => { setActive([]); setSelectedCodes([]); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
-          </div>
-        </div>
-
-        {/* Country Code Key */}
-        <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "16px", backdropFilter: "blur(10px)" }}>
-            <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 12 }}>COUNTRY CODES</div>
-            {active.map(catId => {
-              const cat = CATEGORIES.find(c => c.id === catId);
-              const codes = catId === "rest_of_world"
-                ? [...new Set(
-                    satsRef.current
-                      .filter(s => s.category === "rest_of_world" && s.country_code)
-                      .map(s => s.country_code)
-                  )].sort()
-                : (CATEGORY_CODES[catId] || []);
-              if (!cat) return null;
-              return (
-                <div key={catId} style={{ marginBottom: 12 }}>
-                  <div style={{ color: cat.color, fontSize: 10, letterSpacing: 1, marginBottom: 5 }}>{cat.label.toUpperCase()}</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
-                    {codes.map(code => {
-                      const isSelected = selectedCodes.includes(code);
-                      const selectedInThisCat = codes.filter(c => selectedCodes.includes(c));
-                      const isDimmed = selectedInThisCat.length > 0 && !isSelected;
-                      return (
-                        <span
-                          key={code}
-                          onClick={() => setSelectedCodes(prev =>
-                            prev.includes(code)
-                              ? prev.filter(c => c !== code)
-                              : [...prev, code]
-                          )}
-                          style={{
-                            background: isSelected ? `${cat.color}44` : `${cat.color}18`,
-                            border: `1px solid ${isSelected ? cat.color : `${cat.color}44`}`,
-                            borderRadius: 3,
-                            color: isSelected ? cat.color : `${cat.color}cc`,
-                            fontSize: 9,
-                            padding: "2px 5px",
-                            letterSpacing: 1,
-                            cursor: "pointer",
-                            opacity: isDimmed ? 0.35 : 1,
-                            transition: "opacity 0.15s, background 0.15s",
-                          }}
-                        >
-                          {code}
-                        </span>
-                      );
-                    })}
+      {/* ── DESKTOP LAYOUT ── */}
+      {!isMobile && (
+        <>
+          {/* Left Column — filter + key */}
+          <div style={{ position: "absolute", top: "50%", left: 20, transform: "translateY(-50%)", display: "flex", flexDirection: "column", gap: 10, width: 220 }}>
+            {/* Filter Sidebar */}
+            <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "20px 16px", backdropFilter: "blur(10px)", minWidth: 200 }}>
+              <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16 }}>FILTER OBJECTS</div>
+              {CATEGORIES.map(cat => (
+                <div key={cat.id} onClick={() => toggleCategory(cat.id)} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: "pointer", opacity: active.length === 0 || active.includes(cat.id) ? 1 : 0.4, transition: "opacity 0.2s" }}>
+                  <div style={{ width: 36, height: 18, borderRadius: 9, background: active.includes(cat.id) ? cat.color : "#1a1a2e", border: `1px solid ${cat.color}`, transition: "background 0.2s", position: "relative" }}>
+                    <div style={{ position: "absolute", top: 2, left: active.includes(cat.id) ? 18 : 2, width: 12, height: 12, borderRadius: "50%", background: active.includes(cat.id) ? "#020818" : cat.color, transition: "left 0.2s" }} />
                   </div>
+                  <div style={{ color: cat.color, fontSize: 12, letterSpacing: 1 }}>{cat.label}</div>
+                </div>
+              ))}
+              <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 12 }}>
+                <div onClick={() => { setActive([]); setSelectedCodes([]); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
+              </div>
+            </div>
+            {/* Country Code Key */}
+            <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "16px", backdropFilter: "blur(10px)" }}>
+              <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 12 }}>COUNTRY CODES</div>
+              {active.map(catId => {
+                const cat = CATEGORIES.find(c => c.id === catId);
+                const codes = catId === "rest_of_world"
+                  ? [...new Set(satsRef.current.filter(s => s.category === "rest_of_world" && s.country_code).map(s => s.country_code))].sort()
+                  : (CATEGORY_CODES[catId] || []);
+                if (!cat) return null;
+                return (
+                  <div key={catId} style={{ marginBottom: 12 }}>
+                    <div style={{ color: cat.color, fontSize: 10, letterSpacing: 1, marginBottom: 5 }}>{cat.label.toUpperCase()}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                      {codes.map(code => {
+                        const isSelected = selectedCodes.includes(code);
+                        const isDimmed = codes.filter(c => selectedCodes.includes(c)).length > 0 && !isSelected;
+                        return (
+                          <span key={code} onClick={() => setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])}
+                            style={{ background: isSelected ? `${cat.color}44` : `${cat.color}18`, border: `1px solid ${isSelected ? cat.color : `${cat.color}44`}`, borderRadius: 3, color: isSelected ? cat.color : `${cat.color}cc`, fontSize: 9, padding: "2px 5px", letterSpacing: 1, cursor: "pointer", opacity: isDimmed ? 0.35 : 1, transition: "opacity 0.15s, background 0.15s" }}>
+                            {code}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              {selectedCodes.length > 0 && (
+                <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 10 }}>
+                  <div onClick={() => setSelectedCodes([])} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET CODE FILTER</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Selected satellite panel */}
+          {selected && (
+            <div style={{ position: "absolute", top: "50%", right: 20, transform: "translateY(-50%)", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: 24, backdropFilter: "blur(10px)", minWidth: 260, maxWidth: 300 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>OBJECT DATA</div>
+                <div onClick={() => setSelected(null)} style={{ color: "#00d4ff88", cursor: "pointer", fontSize: 18 }}>×</div>
+              </div>
+              {[
+                ["NAME", selected.object_name], ["TYPE", selected.object_type], ["COUNTRY", selected.country_code],
+                ["LAUNCHED", selected.launch_date], ["INCLINATION", selected.inclination ? `${selected.inclination}°` : "N/A"],
+                ["APOAPSIS", selected.apoapsis ? `${Math.round(selected.apoapsis)} km` : "N/A"],
+                ["PERIAPSIS", selected.periapsis ? `${Math.round(selected.periapsis)} km` : "N/A"],
+                ["PERIOD", selected.period ? `${Math.round(selected.period)} min` : "N/A"],
+              ].map(([label, value]) => (
+                <div key={label} style={{ marginBottom: 10 }}>
+                  <div style={{ color: "#00d4ff88", fontSize: 10, letterSpacing: 2 }}>{label}</div>
+                  <div style={{ color: "#ffffff", fontSize: 13, marginTop: 2 }}>{value || "N/A"}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Speed Control */}
+          <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", textAlign: "center", minWidth: 260 }}>
+            <div style={{ color: "#00d4ff", fontSize: 10, letterSpacing: 3, marginBottom: 8 }}>SIMULATION SPEED</div>
+            <input type="range" min="0" max="3600" step="10" value={timeScale}
+              onChange={e => { const v = Number(e.target.value); setTimeScale(v); timeScaleRef.current = v; }}
+              style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 8 }} />
+            <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8 }}>
+              {[["PAUSE", 0], ["1×", 1], ["60×", 60], ["600×", 600], ["3600×", 3600]].map(([label, val]) => (
+                <div key={val} onClick={() => { setTimeScale(val); timeScaleRef.current = val; }}
+                  style={{ background: timeScale === val ? "#00d4ff33" : "transparent", border: `1px solid ${timeScale === val ? "#00d4ff" : "#00d4ff44"}`, borderRadius: 4, color: timeScale === val ? "#00d4ff" : "#00d4ff88", fontSize: 10, padding: "3px 8px", letterSpacing: 1, cursor: "pointer" }}>
+                  {label}
+                </div>
+              ))}
+            </div>
+            <div style={{ color: "#00d4ff", fontSize: 12, letterSpacing: 2 }}>
+              {timeScale === 0 ? "PAUSED" : timeScale === 1 ? "REAL TIME" : `${timeScale}×`}
+            </div>
+          </div>
+
+          {/* ISS Tracker Panel */}
+          <div style={{ position: "absolute", bottom: 24, right: 24, background: "#020818dd", border: "1px solid #FFD70044", borderRadius: 8, padding: "18px 22px", backdropFilter: "blur(10px)", minWidth: 230 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#FFD700", boxShadow: "0 0 8px #FFD700" }} />
+              <div style={{ color: "#FFD700", fontSize: 11, fontWeight: "bold", letterSpacing: 3 }}>ISS TRACKER</div>
+            </div>
+            <div style={{ color: "#FFD70055", fontSize: 10, letterSpacing: 2, marginBottom: 14 }}>INTERNATIONAL SPACE STATION</div>
+            {issData ? (
+              <>
+                {[
+                  ["ALTITUDE",  `${Number(issData.altitude).toFixed(1)} km`],
+                  ["VELOCITY",  `${Number(issData.velocity).toFixed(2)} km/s`],
+                  ["LATITUDE",  `${Number(issData.latitude).toFixed(4)}°`],
+                  ["LONGITUDE", `${Number(issData.longitude).toFixed(4)}°`],
+                  ["STATUS",    issData.visibility === "daylight" ? "DAYLIGHT" : "ECLIPSE"],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ marginBottom: 9 }}>
+                    <div style={{ color: "#FFD70066", fontSize: 10, letterSpacing: 2 }}>{label}</div>
+                    <div style={{ color: "#FFD700", fontSize: 13, marginTop: 2 }}>{value}</div>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div style={{ color: "#FFD70066", fontSize: 11, letterSpacing: 1 }}>ACQUIRING SIGNAL...</div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── MOBILE LAYOUT ── */}
+      {isMobile && (
+        <>
+          {/* Bottom sheet — slides up when a tab is open */}
+          {mobileTab && (
+            <div style={{ position: "fixed", bottom: 64, left: 0, right: 0, background: "#020818f0", borderTop: "1px solid #00d4ff33", borderRadius: "14px 14px 0 0", padding: "18px 20px 12px", maxHeight: "58vh", overflowY: "auto", backdropFilter: "blur(16px)", zIndex: 500 }}>
+
+              {mobileTab === "filter" && (
+                <>
+                  <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16 }}>FILTER OBJECTS</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px", marginBottom: 16 }}>
+                    {CATEGORIES.map(cat => (
+                      <div key={cat.id} onClick={() => toggleCategory(cat.id)}
+                        style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", opacity: active.length === 0 || active.includes(cat.id) ? 1 : 0.4, padding: "6px 0" }}>
+                        <div style={{ width: 34, height: 18, borderRadius: 9, background: active.includes(cat.id) ? cat.color : "#1a1a2e", border: `1px solid ${cat.color}`, flexShrink: 0, position: "relative" }}>
+                          <div style={{ position: "absolute", top: 2, left: active.includes(cat.id) ? 16 : 2, width: 12, height: 12, borderRadius: "50%", background: active.includes(cat.id) ? "#020818" : cat.color, transition: "left 0.2s" }} />
+                        </div>
+                        <div style={{ color: cat.color, fontSize: 11, letterSpacing: 0.5 }}>{cat.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div onClick={() => { setActive([]); setSelectedCodes([]); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center", padding: "10px 0", borderTop: "1px solid #00d4ff22" }}>RESET ALL FILTERS</div>
+                </>
+              )}
+
+              {mobileTab === "codes" && (
+                <>
+                  <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 12 }}>COUNTRY CODES</div>
+                  {active.length === 0 && <div style={{ color: "#00d4ff44", fontSize: 11, letterSpacing: 1 }}>Enable a filter category to see its country codes.</div>}
+                  {active.map(catId => {
+                    const cat = CATEGORIES.find(c => c.id === catId);
+                    const codes = catId === "rest_of_world"
+                      ? [...new Set(satsRef.current.filter(s => s.category === "rest_of_world" && s.country_code).map(s => s.country_code))].sort()
+                      : (CATEGORY_CODES[catId] || []);
+                    if (!cat) return null;
+                    return (
+                      <div key={catId} style={{ marginBottom: 14 }}>
+                        <div style={{ color: cat.color, fontSize: 10, letterSpacing: 1, marginBottom: 6 }}>{cat.label.toUpperCase()}</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {codes.map(code => {
+                            const isSelected = selectedCodes.includes(code);
+                            const isDimmed = codes.filter(c => selectedCodes.includes(c)).length > 0 && !isSelected;
+                            return (
+                              <span key={code} onClick={() => setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])}
+                                style={{ background: isSelected ? `${cat.color}44` : `${cat.color}18`, border: `1px solid ${isSelected ? cat.color : `${cat.color}44`}`, borderRadius: 4, color: isSelected ? cat.color : `${cat.color}cc`, fontSize: 11, padding: "4px 8px", letterSpacing: 1, cursor: "pointer", opacity: isDimmed ? 0.35 : 1 }}>
+                                {code}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {selectedCodes.length > 0 && (
+                    <div onClick={() => setSelectedCodes([])} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center", padding: "10px 0", borderTop: "1px solid #00d4ff22", marginTop: 4 }}>RESET CODE FILTER</div>
+                  )}
+                </>
+              )}
+
+              {mobileTab === "object" && (
+                <>
+                  <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 14 }}>OBJECT DATA</div>
+                  {selected ? (
+                    <>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px" }}>
+                        {[
+                          ["NAME", selected.object_name], ["TYPE", selected.object_type],
+                          ["COUNTRY", selected.country_code], ["LAUNCHED", selected.launch_date],
+                          ["INCLINATION", selected.inclination ? `${selected.inclination}°` : "N/A"],
+                          ["APOAPSIS", selected.apoapsis ? `${Math.round(selected.apoapsis)} km` : "N/A"],
+                          ["PERIAPSIS", selected.periapsis ? `${Math.round(selected.periapsis)} km` : "N/A"],
+                          ["PERIOD", selected.period ? `${Math.round(selected.period)} min` : "N/A"],
+                        ].map(([label, value]) => (
+                          <div key={label}>
+                            <div style={{ color: "#00d4ff88", fontSize: 10, letterSpacing: 2 }}>{label}</div>
+                            <div style={{ color: "#ffffff", fontSize: 13, marginTop: 2 }}>{value || "N/A"}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div onClick={() => setSelected(null)} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center", padding: "10px 0", borderTop: "1px solid #00d4ff22", marginTop: 14 }}>DESELECT</div>
+                    </>
+                  ) : (
+                    <div style={{ color: "#00d4ff44", fontSize: 11, letterSpacing: 1 }}>Tap a satellite on the globe to select it.</div>
+                  )}
+                </>
+              )}
+
+              {mobileTab === "iss" && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#FFD700", boxShadow: "0 0 8px #FFD700" }} />
+                    <div style={{ color: "#FFD700", fontSize: 11, fontWeight: "bold", letterSpacing: 3 }}>ISS TRACKER</div>
+                  </div>
+                  <div style={{ color: "#FFD70055", fontSize: 10, letterSpacing: 2, marginBottom: 14 }}>INTERNATIONAL SPACE STATION</div>
+                  {issData ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px" }}>
+                      {[
+                        ["ALTITUDE",  `${Number(issData.altitude).toFixed(1)} km`],
+                        ["VELOCITY",  `${Number(issData.velocity).toFixed(2)} km/s`],
+                        ["LATITUDE",  `${Number(issData.latitude).toFixed(4)}°`],
+                        ["LONGITUDE", `${Number(issData.longitude).toFixed(4)}°`],
+                        ["STATUS",    issData.visibility === "daylight" ? "DAYLIGHT" : "ECLIPSE"],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <div style={{ color: "#FFD70066", fontSize: 10, letterSpacing: 2 }}>{label}</div>
+                          <div style={{ color: "#FFD700", fontSize: 13, marginTop: 2 }}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ color: "#FFD70066", fontSize: 11 }}>ACQUIRING SIGNAL...</div>
+                  )}
+                </>
+              )}
+
+              {mobileTab === "speed" && (
+                <>
+                  <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16 }}>SIMULATION SPEED</div>
+                  <input type="range" min="0" max="3600" step="10" value={timeScale}
+                    onChange={e => { const v = Number(e.target.value); setTimeScale(v); timeScaleRef.current = v; }}
+                    style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 16 }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 6, marginBottom: 12 }}>
+                    {[["PAUSE", 0], ["1×", 1], ["60×", 60], ["600×", 600], ["3600×", 3600]].map(([label, val]) => (
+                      <div key={val} onClick={() => { setTimeScale(val); timeScaleRef.current = val; }}
+                        style={{ flex: 1, textAlign: "center", background: timeScale === val ? "#00d4ff33" : "transparent", border: `1px solid ${timeScale === val ? "#00d4ff" : "#00d4ff44"}`, borderRadius: 6, color: timeScale === val ? "#00d4ff" : "#00d4ff88", fontSize: 12, padding: "8px 4px", letterSpacing: 1, cursor: "pointer" }}>
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ color: "#00d4ff", fontSize: 13, letterSpacing: 2, textAlign: "center" }}>
+                    {timeScale === 0 ? "PAUSED" : timeScale === 1 ? "REAL TIME" : `${timeScale}×`}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Bottom tab bar */}
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 64, background: "#020818", borderTop: "1px solid #00d4ff22", display: "flex", zIndex: 600 }}>
+            {[
+              { id: "filter", label: "FILTER",  icon: "≡",  color: "#00d4ff", badge: active.length > 0 },
+              { id: "codes",  label: "CODES",   icon: "⊞",  color: "#00d4ff", badge: selectedCodes.length > 0 },
+              { id: "object", label: "OBJECT",  icon: "◎",  color: "#00d4ff", badge: !!selected },
+              { id: "iss",    label: "ISS",     icon: "◉",  color: "#FFD700", badge: !!issData },
+              { id: "speed",  label: "SPEED",   icon: "⏱",  color: "#00d4ff", badge: timeScale !== 60 },
+            ].map(tab => {
+              const isActive = mobileTab === tab.id;
+              return (
+                <div key={tab.id} onClick={() => setMobileTab(prev => prev === tab.id ? null : tab.id)}
+                  style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", gap: 3, borderTop: `2px solid ${isActive ? tab.color : "transparent"}`, background: isActive ? `${tab.color}11` : "transparent", transition: "background 0.15s", position: "relative" }}>
+                  {tab.badge && <div style={{ position: "absolute", top: 8, right: "calc(50% - 10px)", width: 6, height: 6, borderRadius: "50%", background: tab.color, boxShadow: `0 0 6px ${tab.color}` }} />}
+                  <div style={{ fontSize: 16, color: isActive ? tab.color : `${tab.color}66` }}>{tab.icon}</div>
+                  <div style={{ fontSize: 9, letterSpacing: 1.5, color: isActive ? tab.color : `${tab.color}66` }}>{tab.label}</div>
                 </div>
               );
             })}
-            {selectedCodes.length > 0 && (
-              <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 10 }}>
-                <div onClick={() => setSelectedCodes([])} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET CODE FILTER</div>
-              </div>
-            )}
-        </div>
-      </div>
-
-      {/* Selected satellite panel */}
-      {selected && (
-        <div style={{ position: "absolute", top: "50%", right: 20, transform: "translateY(-50%)", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: 24, backdropFilter: "blur(10px)", minWidth: 260, maxWidth: 300 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>OBJECT DATA</div>
-            <div onClick={() => setSelected(null)} style={{ color: "#00d4ff88", cursor: "pointer", fontSize: 18 }}>×</div>
           </div>
-          {[
-            ["NAME", selected.object_name],
-            ["TYPE", selected.object_type],
-            ["COUNTRY", selected.country_code],
-            ["LAUNCHED", selected.launch_date],
-            ["INCLINATION", selected.inclination ? `${selected.inclination}°` : "N/A"],
-            ["APOAPSIS", selected.apoapsis ? `${Math.round(selected.apoapsis)} km` : "N/A"],
-            ["PERIAPSIS", selected.periapsis ? `${Math.round(selected.periapsis)} km` : "N/A"],
-            ["PERIOD", selected.period ? `${Math.round(selected.period)} min` : "N/A"],
-          ].map(([label, value]) => (
-            <div key={label} style={{ marginBottom: 10 }}>
-              <div style={{ color: "#00d4ff88", fontSize: 10, letterSpacing: 2 }}>{label}</div>
-              <div style={{ color: "#ffffff", fontSize: 13, marginTop: 2 }}>{value || "N/A"}</div>
-            </div>
-          ))}
-        </div>
+        </>
       )}
-      {/* Speed Control */}
-      <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", textAlign: "center", minWidth: 260 }}>
-        <div style={{ color: "#00d4ff", fontSize: 10, letterSpacing: 3, marginBottom: 8 }}>SIMULATION SPEED</div>
-        <input
-          type="range" min="0" max="3600" step="10" value={timeScale}
-          onChange={e => { const v = Number(e.target.value); setTimeScale(v); timeScaleRef.current = v; }}
-          style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 8 }}
-        />
-        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8 }}>
-          {[["PAUSE", 0], ["1×", 1], ["60×", 60], ["600×", 600], ["3600×", 3600]].map(([label, val]) => (
-            <div
-              key={val}
-              onClick={() => { setTimeScale(val); timeScaleRef.current = val; }}
-              style={{ background: timeScale === val ? "#00d4ff33" : "transparent", border: `1px solid ${timeScale === val ? "#00d4ff" : "#00d4ff44"}`, borderRadius: 4, color: timeScale === val ? "#00d4ff" : "#00d4ff88", fontSize: 10, padding: "3px 8px", letterSpacing: 1, cursor: "pointer" }}
-            >
-              {label}
-            </div>
-          ))}
-        </div>
-        <div style={{ color: "#00d4ff", fontSize: 12, letterSpacing: 2 }}>
-          {timeScale === 0 ? "PAUSED" : timeScale === 1 ? "REAL TIME" : `${timeScale}×`}
-        </div>
-      </div>
-
-      {/* ISS Tracker Panel */}
-      <div style={{ position: "absolute", bottom: 24, right: 24, background: "#020818dd", border: "1px solid #FFD70044", borderRadius: 8, padding: "18px 22px", backdropFilter: "blur(10px)", minWidth: 230 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#FFD700", boxShadow: "0 0 8px #FFD700" }} />
-          <div style={{ color: "#FFD700", fontSize: 11, fontWeight: "bold", letterSpacing: 3 }}>ISS TRACKER</div>
-        </div>
-        <div style={{ color: "#FFD70055", fontSize: 10, letterSpacing: 2, marginBottom: 14 }}>INTERNATIONAL SPACE STATION</div>
-        {issData ? (
-          <>
-            {[
-              ["ALTITUDE",  `${Number(issData.altitude).toFixed(1)} km`],
-              ["VELOCITY",  `${Number(issData.velocity).toFixed(2)} km/s`],
-              ["LATITUDE",  `${Number(issData.latitude).toFixed(4)}°`],
-              ["LONGITUDE", `${Number(issData.longitude).toFixed(4)}°`],
-              ["STATUS",    issData.visibility === "daylight" ? "DAYLIGHT" : "ECLIPSE"],
-            ].map(([label, value]) => (
-              <div key={label} style={{ marginBottom: 9 }}>
-                <div style={{ color: "#FFD70066", fontSize: 10, letterSpacing: 2 }}>{label}</div>
-                <div style={{ color: "#FFD700", fontSize: 13, marginTop: 2 }}>{value}</div>
-              </div>
-            ))}
-          </>
-        ) : (
-          <div style={{ color: "#FFD70066", fontSize: 11, letterSpacing: 1 }}>ACQUIRING SIGNAL...</div>
-        )}
-      </div>
 
       <Analytics />
     </div>
