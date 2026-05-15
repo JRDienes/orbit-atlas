@@ -144,6 +144,7 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [mobileTab, setMobileTab] = useState(null);
   const mobileTabRef = useRef(null);
+  const isMobileRef = useRef(window.innerWidth < 768);
 
   // Fade out loading overlay once data is ready
   useEffect(() => {
@@ -156,7 +157,11 @@ export default function App() {
 
   // Track mobile breakpoint
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768);
+    const onResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      isMobileRef.current = mobile;
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -256,6 +261,7 @@ export default function App() {
     };
     const onMouseUp = () => { isDragging = false; };
     const onMouseMove = e => {
+      if (isMobileRef.current) return;
       if (isDragging) {
         const dx = e.clientX - prevMouse.x;
         const dy = e.clientY - prevMouse.y;
@@ -294,6 +300,7 @@ export default function App() {
 
     // Click uses already-hovered index — no double raycast needed
     const onClick = e => {
+      if (isMobileRef.current) return;
       if (dragMoved) return;
       if (hoveredIdx >= 0) {
         const { satObjects } = pointsRef.current;
