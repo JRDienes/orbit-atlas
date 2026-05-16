@@ -36,7 +36,7 @@ function categorize(sat) {
   if (["FR","GER","IT","SPN","NOR","SWED","BEL","NETH","SWTZ","DEN",
        "FIN","POR","POL","CZE","CZCH","HUN","ROM","EST","LTU","HRV",
        "SVN","FGER","GREC","LUXE","TURK","ESA","EUME","EUTE","SES","FRIT"].includes(country)) return "europe";
-  if (["CIS","BELA","KAZ","UKR","AZER","SEAL","TMMC","STCT"].includes(country)) return "russia";
+  if (["CIS","RUS","SU","USSR","BELA","KAZ","UKR","AZER","SEAL","TMMC","STCT"].includes(country)) return "russia";
   if (["PRC","CHBZ","CHLE","NICO","ABS","PAKI","LAOS","NKOR"].includes(country)) return "china";
   if (country === "JPN") return "japan";
   if (country === "IND") return "india";

@@ -17,13 +17,14 @@
 
 ## 📡 What It Does
 
-Orbit Atlas visualizes every tracked object in Earth's orbit on an interactive 3D globe. Data is pulled from the U.S. Space Force's Space-Track API, stored in PostgreSQL, and rendered in WebGL using Three.js. Satellites are grouped into 14 operator categories with individual Keplerian orbit traces, real-time ISS tracking, and country-level filtering.
+Orbit Atlas visualizes every tracked object in Earth's orbit on an interactive 3D globe. Data is pulled from the U.S. Space Force's Space-Track API, stored in PostgreSQL, and rendered in WebGL using Three.js. Satellites are grouped into 15 operator categories with individual Keplerian orbit traces, real-time ISS tracking, country-level filtering, and a historical timeline to scrub through the entire space age year by year.
 
 - **27,000+ tracked objects** — active satellites, rocket bodies, and debris
-- **14 operator categories** with country-representative colors
+- **15 operator categories** with country-representative colors
 - **Per-satellite Keplerian orbit traces** shown when a category is toggled on
 - **Live ISS tracker** — real-time position, 90s fading trail, full future orbit path
 - **Country code drill-down** — filter to specific nations within any category
+- **Historical timeline** — scrub from 1957 to present, play/pause/step through years
 - **High-tech military aesthetic** — dark theme, electric blue and green accents
 - **Auto-refreshing pipeline** — data updates weekly via GitHub Actions
 
@@ -72,8 +73,17 @@ Space-Track.org API (U.S. Space Force)
 - [x] Vercel Web Analytics
 - [x] Vercel Speed Insights
 
+### Performance
+- [x] Earth texture served locally — eliminates external CDN dependency
+- [x] WebGL pixel ratio capped at 2× — reduces GPU load on high-DPR devices
+- [x] Web Worker for SGP4 propagation — main thread unblocked during satellite load
+- [x] Parallel Supabase page fetches via Promise.all — all pages in-flight simultaneously
+- [x] Real TLE-based positioning using satellite.js — one-time SGP4 propagation at page load
+- [x] Animated satellite movement along orbital paths — Keplerian theta propagation, chunked per-frame updates
+- [x] Simulation speed slider — PAUSE, 1×, 60×, 600×, 3600× presets
+
 ### Satellite Categories & Filtering
-- [x] 15 operator categories with country-representative colors (SpaceX/Starlink, Amazon Kuiper, AST SpaceMobile, US, UK, Europe/ESA, Russia, China, Japan, India, Middle East, Asia Pacific, Rest of World, Debris, Rocket Bodies)
+- [x] 15 operator categories with country-representative colors (SpaceX/Starlink, Amazon Kuiper, AST SpaceMobile, US, UK, Europe/ESA, Russia/CIS, China, Japan, India, Middle East, Asia Pacific, Rest of World, Debris, Rocket Bodies)
 - [x] Name-based detection for Starlink, Kuiper, and AST SpaceMobile (BLUEBIRD/SPACEMOBILE) constellations
 - [x] Left sidebar toggle filters — active/dimmed states
 - [x] Country code key panel — always visible, shows codes per active category
@@ -94,6 +104,15 @@ Space-Track.org API (U.S. Space Force)
 - [x] Click to select — detail panel with name, type, country, and orbit stats
 - [x] Drag vs click disambiguation (no accidental selections while rotating)
 
+### Historical Timeline
+- [x] Year slider + dropdown — scrub from 1957 to present
+- [x] Play / pause / step-back / step-forward controls
+- [x] Auto-plays from selected year to present at 300ms per year
+- [x] Satellites not yet launched in selected year are completely hidden (moved inside Earth geometry)
+- [x] Orbit rings update live as timeline advances — only rings for launched satellites appear
+- [x] Timeline syncs with category and country code filters simultaneously
+- [x] Mobile TIME tab in bottom bar with badge indicator when a year is active
+
 ### ISS Live Tracker
 - [x] Real-time ISS position via wheretheiss.at API (updates every 5 seconds)
 - [x] Pulsing gold marker with animated size in render loop
@@ -101,40 +120,43 @@ Space-Track.org API (U.S. Space Force)
 - [x] Full future orbit path via SGP4 propagation (~92 min ahead)
 - [x] Dedicated always-visible panel: altitude, velocity, lat/lon, daylight/eclipse status
 
+### Mobile
+- [x] Responsive layout — bottom tab bar (FILTER / CODES / OBJECT / ISS / TIME / SPEED)
+- [x] Bottom sheet panels for all controls
+- [x] Touch drag to rotate, pinch to zoom, tap to select satellite
+- [x] Badge indicators on active tabs
+
 ---
 
 ## 🚧 Roadmap
 
-### Performance
-- **Target: 90 Real Experience Score on Vercel Speed Insights** (currently 70)
-- [x] Real TLE-based positioning using satellite.js — one-time SGP4 propagation at page load
-- [x] Animated satellite movement along orbital paths — Keplerian theta propagation, chunked per-frame updates
-- [x] Simulation speed slider — PAUSE, 1×, 60×, 600×, 3600× presets
-- [x] Earth texture served locally — eliminates external CDN dependency
-- [x] WebGL pixel ratio capped at 2× — reduces GPU load on high-DPR devices
-- [x] Web Worker for SGP4 propagation — main thread unblocked during satellite load
-- [x] Parallel Supabase page fetches via Promise.all — all pages in-flight simultaneously
-- [ ] Real-time orbital propagation — update all dot positions every 30s via full SGP4
-- [ ] Full 27,000+ object rendering with debris toggle
-- [ ] Level of detail (LOD) — fewer points when zoomed out
+### 📅 Historical Data
+- [ ] Integrate Jonathan McDowell's GCAT (planet4589.org/space/gcat) — comprehensive catalog of every object ever launched since 1957, including decayed ones
+- [ ] Pull Space-Track `satcat` endpoint alongside `gp` — includes Sputnik, Vostok, and all historical objects with decay dates
+- [ ] Add `decay_date` column to Supabase schema
+- [ ] Timeline logic: show satellite from `launch_date` until `decay_date` (currently only shows objects still in orbit)
+- [ ] Sputnik, early Cosmos series, Apollo-era objects visible in their correct years
 
-### UI / UX
-- [x] Mobile responsive layout — bottom tab bar (FILTER / CODES / OBJECT / ISS / SPEED), bottom sheet panels, touch controls
-- [x] Tap to select satellite on mobile, badge indicators on active tabs
+### ⚡ Performance
+- [ ] Full 27,000+ object rendering including debris toggle
+- [ ] Level of detail (LOD) — fewer points when zoomed out
+- [ ] Target: 90 Real Experience Score on Vercel Speed Insights (currently ~70)
+
+### 🛰️ Satellite Detail & Interaction
 - [ ] Search bar to find a satellite by name or NORAD ID
 
-### ISS Enhancements
+### 🌍 ISS Enhancements
 - [ ] Crew manifest panel — current astronauts aboard
 - [ ] Pass prediction — when will ISS fly over your location
 
-### Data & Backend
+### 📊 Data & Backend
 - [ ] Enable Supabase Row Level Security (RLS)
 - [ ] User accounts — save favourite satellites and custom filters
 - [ ] Launch schedule feed with countdown timers
 
-### Polish
+### ✨ Polish
 - [ ] Custom domain
-- [ ] About panel explaining the data source
+- [ ] About panel explaining the data source and methodology
 - [ ] Share a specific satellite view via URL
 
 ---
