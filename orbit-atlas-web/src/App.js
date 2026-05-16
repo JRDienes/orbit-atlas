@@ -37,7 +37,7 @@ const CATEGORY_CODES = {
   europe:        ["FR", "GER", "IT", "SPN", "NOR", "SWED", "BEL", "NETH", "SWTZ", "DEN",
                   "FIN", "POR", "POL", "CZE", "CZCH", "HUN", "ROM", "EST", "LTU", "HRV",
                   "SVN", "FGER", "GREC", "LUXE", "TURK", "ESA", "EUME", "EUTE", "SES", "FRIT"],
-  russia:        ["CIS", "BELA", "KAZ", "UKR", "AZER", "SEAL", "TMMC", "STCT"],
+  russia:        ["CIS", "RUS", "SU", "USSR", "BELA", "KAZ", "UKR", "AZER", "SEAL", "TMMC", "STCT"],
   china:         ["PRC", "CHBZ", "CHLE", "NICO", "ABS", "PAKI", "LAOS", "NKOR"],
   japan:         ["JPN"],
   india:         ["IND"],
@@ -80,7 +80,7 @@ function categorize(sat) {
     return "europe";
 
   // Russia & sphere
-  if (["CIS", "BELA", "KAZ", "UKR", "AZER", "SEAL", "TMMC", "STCT"].includes(country))
+  if (["CIS", "RUS", "SU", "USSR", "BELA", "KAZ", "UKR", "AZER", "SEAL", "TMMC", "STCT"].includes(country))
     return "russia";
 
   // China & sphere
@@ -150,6 +150,11 @@ export default function App() {
   const lastFrameTimeRef = useRef(null);
   const timeScaleRef = useRef(60);
   const [timeScale, setTimeScale] = useState(60);
+  const [timelineYear, setTimelineYear] = useState(null);
+  const [timelinePlaying, setTimelinePlaying] = useState(false);
+  const timelineYearRef = useRef(null);
+  const timelineIntervalRef = useRef(null);
+  const CURRENT_YEAR = new Date().getFullYear();
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [mobileTab, setMobileTab] = useState(null);
   const mobileTabRef = useRef(null);
@@ -205,11 +210,52 @@ export default function App() {
     if (selected && isMobile) setMobileTab("object");
   }, [selected, isMobile]);
 
+  // Keep ref in sync so interval closure always reads the latest year
+  useEffect(() => { timelineYearRef.current = timelineYear; }, [timelineYear]);
+
   // Toggle category filter
   function toggleCategory(id) {
     setActive(prev =>
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
     );
+  }
+
+  function stopTimelinePlay() {
+    clearInterval(timelineIntervalRef.current);
+    timelineIntervalRef.current = null;
+    setTimelinePlaying(false);
+  }
+
+  function toggleTimelinePlay() {
+    if (timelinePlaying) { stopTimelinePlay(); return; }
+    if (timelineYearRef.current === null) {
+      timelineYearRef.current = 1957;
+      setTimelineYear(1957);
+    }
+    setTimelinePlaying(true);
+    timelineIntervalRef.current = setInterval(() => {
+      const next = (timelineYearRef.current ?? 1957) + 1;
+      if (next >= CURRENT_YEAR) {
+        clearInterval(timelineIntervalRef.current);
+        timelineIntervalRef.current = null;
+        timelineYearRef.current = null;
+        setTimelineYear(null);
+        setTimelinePlaying(false);
+      } else {
+        timelineYearRef.current = next;
+        setTimelineYear(next);
+      }
+    }, 300);
+  }
+
+  function stepTimelineBack() {
+    stopTimelinePlay();
+    setTimelineYear(prev => prev === null ? CURRENT_YEAR - 1 : Math.max(1957, prev - 1));
+  }
+
+  function stepTimelineForward() {
+    stopTimelinePlay();
+    setTimelineYear(prev => prev === null ? null : (prev >= CURRENT_YEAR - 1 ? null : prev + 1));
   }
 
   useEffect(() => {
@@ -431,7 +477,7 @@ export default function App() {
         const end = Math.min(start + CHUNK, pSats.length);
         for (let i = start; i < end; i++) {
           const s = pSats[i];
-          if (!s.angularSpeed) continue;
+          if (!s.angularSpeed || s.timelineHidden) continue;
           s.theta += s.angularSpeed * dt;
           const xOrb = s.a * Math.cos(s.theta) - s.c;
           const zOrb = s.b * Math.sin(s.theta);
@@ -573,6 +619,7 @@ export default function App() {
     setLoading(false);
 
     return () => {
+      if (timelineIntervalRef.current) clearInterval(timelineIntervalRef.current);
       if (activeWorkerRef.current) {
         activeWorkerRef.current.terminate();
         activeWorkerRef.current = null;
@@ -619,6 +666,10 @@ export default function App() {
 
     // Per-category: if any selected codes belong to this cat, filter to those; else show all in cat
     const satVisible = (sat) => {
+      if (timelineYear !== null) {
+        const launchYear = sat.launch_date ? parseInt(sat.launch_date.substring(0, 4), 10) : null;
+        if (!launchYear || launchYear > timelineYear) return false;
+      }
       const inCat = active.length === 0 || active.includes(sat.category);
       if (!inCat) return false;
       const catCodes = getFilterableCodes(sat.category);
@@ -634,16 +685,33 @@ export default function App() {
       })
     );
 
-    // Update dot colors
+    // Update dot colors and positions
+    const pa = geo.getAttribute("position");
     const newColors = [];
-    satObjects.forEach((sat) => {
-      if (satVisible(sat)) {
-        const [r, g, b] = catRGB[sat.category] || [1, 1, 1];
-        newColors.push(r, g, b);
+    satObjects.forEach((sat, i) => {
+      const launchYear = sat.launch_date ? parseInt(sat.launch_date.substring(0, 4), 10) : null;
+      const notYetLaunched = timelineYear !== null && (!launchYear || launchYear > timelineYear);
+
+      if (notYetLaunched) {
+        // Move inside the Earth — invisible and unclickable
+        pa.array[i * 3] = 0; pa.array[i * 3 + 1] = 0; pa.array[i * 3 + 2] = 0;
+        newColors.push(0, 0, 0);
+        sat.timelineHidden = true;
       } else {
-        newColors.push(0.05, 0.05, 0.1);
+        if (sat.timelineHidden) {
+          // Restore to last known position when year is moved forward again
+          pa.array[i * 3] = sat.x; pa.array[i * 3 + 1] = sat.y; pa.array[i * 3 + 2] = sat.z;
+        }
+        sat.timelineHidden = false;
+        if (satVisible(sat)) {
+          const [r, g, b] = catRGB[sat.category] || [1, 1, 1];
+          newColors.push(r, g, b);
+        } else {
+          newColors.push(0.05, 0.05, 0.1);
+        }
       }
     });
+    pa.needsUpdate = true;
     geo.setAttribute("color", new THREE.Float32BufferAttribute(newColors, 3));
     geo.attributes.color.needsUpdate = true;
 
@@ -670,6 +738,7 @@ export default function App() {
         s.category === catId &&
         s.apoapsis != null &&
         s.inclination != null &&
+        !s.timelineHidden &&
         (selectedInCat.length === 0 || selectedInCat.includes(s.country_code))
       );
       if (catSats.length === 0) return;
@@ -733,7 +802,15 @@ export default function App() {
       earth.add(orbitLines);
       shellsRef.current.push(orbitLines);
     });
-  }, [active, selectedCodes]);
+  }, [active, selectedCodes, timelineYear]);
+
+  // Hide ISS when timeline is set before its launch year (Zarya module: Nov 1998)
+  useEffect(() => {
+    const hidden = timelineYear !== null && timelineYear < 1998;
+    if (issMarkerRef.current) issMarkerRef.current.visible = !hidden;
+    if (issTrailRef.current?.mesh) issTrailRef.current.mesh.visible = !hidden;
+    if (issFutureRef.current) issFutureRef.current.visible = !hidden;
+  }, [timelineYear]);
 
   // ISS live tracking
   useEffect(() => {
@@ -989,22 +1066,68 @@ export default function App() {
             </div>
           )}
 
-          {/* Speed Control */}
-          <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", textAlign: "center", minWidth: 260 }}>
-            <div style={{ color: "#00d4ff", fontSize: 10, letterSpacing: 3, marginBottom: 8 }}>SIMULATION SPEED</div>
-            <input type="range" min="0" max="3600" step="10" value={timeScale}
-              onChange={e => { const v = Number(e.target.value); setTimeScale(v); timeScaleRef.current = v; }}
-              style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 8 }} />
-            <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8 }}>
-              {[["PAUSE", 0], ["1×", 1], ["60×", 60], ["600×", 600], ["3600×", 3600]].map(([label, val]) => (
-                <div key={val} onClick={() => { setTimeScale(val); timeScaleRef.current = val; }}
-                  style={{ background: timeScale === val ? "#00d4ff33" : "transparent", border: `1px solid ${timeScale === val ? "#00d4ff" : "#00d4ff44"}`, borderRadius: 4, color: timeScale === val ? "#00d4ff" : "#00d4ff88", fontSize: 10, padding: "3px 8px", letterSpacing: 1, cursor: "pointer" }}>
-                  {label}
+          {/* Bottom center — Timeline + Speed side by side */}
+          <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 10, alignItems: "stretch" }}>
+
+            {/* Timeline */}
+            <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", minWidth: 240 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ color: "#00d4ff", fontSize: 10, letterSpacing: 3 }}>TIMELINE</div>
+                <select
+                  value={timelineYear ?? CURRENT_YEAR}
+                  onChange={e => {
+                    const y = Number(e.target.value);
+                    setTimelineYear(y >= CURRENT_YEAR ? null : y);
+                  }}
+                  style={{ background: "#020818", border: "1px solid #00d4ff44", color: "#00d4ff", fontSize: 13, fontWeight: "bold", padding: "3px 6px", borderRadius: 4, cursor: "pointer", fontFamily: "'Courier New', monospace", letterSpacing: 2 }}
+                >
+                  <option value={CURRENT_YEAR}>PRESENT</option>
+                  {Array.from({ length: CURRENT_YEAR - 1957 }, (_, i) => CURRENT_YEAR - 1 - i).map(year => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </div>
+              <input type="range" min={1957} max={CURRENT_YEAR} step={1}
+                value={timelineYear ?? CURRENT_YEAR}
+                onChange={e => {
+                  const y = Number(e.target.value);
+                  setTimelineYear(y >= CURRENT_YEAR ? null : y);
+                }}
+                style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 6 }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: "#00d4ff55", fontSize: 9, letterSpacing: 1 }}>1957</span>
+                <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                  {[
+                    { label: "←", action: stepTimelineBack },
+                    { label: timelinePlaying ? "⏸" : "▶", action: toggleTimelinePlay, active: timelinePlaying },
+                    { label: "→", action: stepTimelineForward },
+                  ].map(btn => (
+                    <div key={btn.label} onClick={btn.action} style={{ color: btn.active ? "#00d4ff" : "#00d4ff88", fontSize: 12, cursor: "pointer", padding: "2px 9px", border: `1px solid ${btn.active ? "#00d4ff" : "#00d4ff33"}`, borderRadius: 3, background: btn.active ? "#00d4ff22" : "transparent", userSelect: "none" }}>
+                      {btn.label}
+                    </div>
+                  ))}
                 </div>
-              ))}
+                <span style={{ color: "#00d4ff55", fontSize: 9, letterSpacing: 1 }}>PRESENT</span>
+              </div>
             </div>
-            <div style={{ color: "#00d4ff", fontSize: 12, letterSpacing: 2 }}>
-              {timeScale === 0 ? "PAUSED" : timeScale === 1 ? "REAL TIME" : `${timeScale}×`}
+
+            {/* Speed Control */}
+            <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", textAlign: "center", minWidth: 260 }}>
+              <div style={{ color: "#00d4ff", fontSize: 10, letterSpacing: 3, marginBottom: 8 }}>SIMULATION SPEED</div>
+              <input type="range" min="0" max="3600" step="10" value={timeScale}
+                onChange={e => { const v = Number(e.target.value); setTimeScale(v); timeScaleRef.current = v; }}
+                style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 8 }} />
+              <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8 }}>
+                {[["PAUSE", 0], ["1×", 1], ["60×", 60], ["600×", 600], ["3600×", 3600]].map(([label, val]) => (
+                  <div key={val} onClick={() => { setTimeScale(val); timeScaleRef.current = val; }}
+                    style={{ background: timeScale === val ? "#00d4ff33" : "transparent", border: `1px solid ${timeScale === val ? "#00d4ff" : "#00d4ff44"}`, borderRadius: 4, color: timeScale === val ? "#00d4ff" : "#00d4ff88", fontSize: 10, padding: "3px 8px", letterSpacing: 1, cursor: "pointer" }}>
+                    {label}
+                  </div>
+                ))}
+              </div>
+              <div style={{ color: "#00d4ff", fontSize: 12, letterSpacing: 2 }}>
+                {timeScale === 0 ? "PAUSED" : timeScale === 1 ? "REAL TIME" : `${timeScale}×`}
+              </div>
             </div>
           </div>
 
@@ -1015,7 +1138,9 @@ export default function App() {
               <div style={{ color: "#FFD700", fontSize: 11, fontWeight: "bold", letterSpacing: 3 }}>ISS TRACKER</div>
             </div>
             <div style={{ color: "#FFD70055", fontSize: 10, letterSpacing: 2, marginBottom: 14 }}>INTERNATIONAL SPACE STATION</div>
-            {issData ? (
+            {timelineYear !== null && timelineYear < 1998 ? (
+              <div style={{ color: "#FFD70044", fontSize: 11, letterSpacing: 1 }}>NOT YET LAUNCHED<br/><span style={{ fontSize: 9, letterSpacing: 2 }}>ZARYA MODULE: NOV 1998</span></div>
+            ) : issData ? (
               <>
                 {[
                   ["ALTITUDE",  `${Number(issData.altitude).toFixed(1)} km`],
@@ -1131,7 +1256,9 @@ export default function App() {
                     <div style={{ color: "#FFD700", fontSize: 11, fontWeight: "bold", letterSpacing: 3 }}>ISS TRACKER</div>
                   </div>
                   <div style={{ color: "#FFD70055", fontSize: 10, letterSpacing: 2, marginBottom: 14 }}>INTERNATIONAL SPACE STATION</div>
-                  {issData ? (
+                  {timelineYear !== null && timelineYear < 1998 ? (
+                    <div style={{ color: "#FFD70044", fontSize: 11, letterSpacing: 1 }}>NOT YET LAUNCHED<br/><span style={{ fontSize: 9, letterSpacing: 2 }}>ZARYA MODULE: NOV 1998</span></div>
+                  ) : issData ? (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px" }}>
                       {[
                         ["ALTITUDE",  `${Number(issData.altitude).toFixed(1)} km`],
@@ -1149,6 +1276,49 @@ export default function App() {
                   ) : (
                     <div style={{ color: "#FFD70066", fontSize: 11 }}>ACQUIRING SIGNAL...</div>
                   )}
+                </>
+              )}
+
+              {mobileTab === "time" && (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                    <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>TIMELINE</div>
+                    <select
+                      value={timelineYear ?? CURRENT_YEAR}
+                      onChange={e => {
+                        const y = Number(e.target.value);
+                        setTimelineYear(y >= CURRENT_YEAR ? null : y);
+                      }}
+                      style={{ background: "#020818", border: "1px solid #00d4ff44", color: "#00d4ff", fontSize: 15, fontWeight: "bold", padding: "4px 8px", borderRadius: 4, cursor: "pointer", fontFamily: "'Courier New', monospace", letterSpacing: 2 }}
+                    >
+                      <option value={CURRENT_YEAR}>PRESENT</option>
+                      {Array.from({ length: CURRENT_YEAR - 1957 }, (_, i) => CURRENT_YEAR - 1 - i).map(year => (
+                        <option key={year} value={year}>{year}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <input type="range" min={1957} max={CURRENT_YEAR} step={1}
+                    value={timelineYear ?? CURRENT_YEAR}
+                    onChange={e => {
+                      const y = Number(e.target.value);
+                      setTimelineYear(y >= CURRENT_YEAR ? null : y);
+                    }}
+                    style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 10 }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                    <span style={{ color: "#00d4ff55", fontSize: 10, letterSpacing: 1 }}>1957</span>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      {[
+                        { label: "←", action: stepTimelineBack },
+                        { label: timelinePlaying ? "⏸" : "▶", action: toggleTimelinePlay, active: timelinePlaying },
+                        { label: "→", action: stepTimelineForward },
+                      ].map(btn => (
+                        <div key={btn.label} onClick={btn.action} style={{ color: btn.active ? "#00d4ff" : "#00d4ff88", fontSize: 16, cursor: "pointer", padding: "4px 12px", border: `1px solid ${btn.active ? "#00d4ff" : "#00d4ff33"}`, borderRadius: 4, background: btn.active ? "#00d4ff22" : "transparent", userSelect: "none" }}>
+                          {btn.label}
+                        </div>
+                      ))}
+                    </div>
+                    <span style={{ color: "#00d4ff55", fontSize: 10, letterSpacing: 1 }}>PRESENT</span>
+                  </div>
                 </>
               )}
 
@@ -1181,6 +1351,7 @@ export default function App() {
               { id: "codes",  label: "CODES",   icon: "⊞",  color: "#00d4ff", badge: selectedCodes.length > 0 },
               { id: "object", label: "OBJECT",  icon: "◎",  color: "#00d4ff", badge: !!selected },
               { id: "iss",    label: "ISS",     icon: "◉",  color: "#FFD700", badge: !!issData },
+              { id: "time",   label: "TIME",    icon: "⏳",  color: "#00d4ff", badge: timelineYear !== null },
               { id: "speed",  label: "SPEED",   icon: "⏱",  color: "#00d4ff", badge: timeScale !== 60 },
             ].map(tab => {
               const isActive = mobileTab === tab.id;
