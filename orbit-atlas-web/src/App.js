@@ -167,6 +167,7 @@ export default function App() {
   const sceneRef = useRef(null);
   const earthRef = useRef(null);
   const shellsRef = useRef([]);
+  const isolatedOrbitRef = useRef(null);
   const highlightRef = useRef(null);
   const issMarkerRef = useRef(null);
   const issTrailRef = useRef(null);
@@ -404,9 +405,11 @@ export default function App() {
     };
 
     // Click uses already-hovered index — no double raycast needed
+    // Guard: only process clicks directly on the WebGL canvas so UI panel clicks don't clear the selection
     const onClick = e => {
       if (isMobileRef.current) return;
       if (dragMoved) return;
+      if (e.target !== renderer.domElement) return;
       if (hoveredIdx >= 0) {
         const { satObjects } = pointsRef.current;
         if (satObjects) setSelected(satObjects[hoveredIdx]);
@@ -648,6 +651,11 @@ export default function App() {
 
     return () => {
       if (timelineIntervalRef.current) clearInterval(timelineIntervalRef.current);
+      if (isolatedOrbitRef.current) {
+        isolatedOrbitRef.current.geometry.dispose();
+        isolatedOrbitRef.current.material.dispose();
+        isolatedOrbitRef.current = null;
+      }
       if (activeWorkerRef.current) {
         activeWorkerRef.current.terminate();
         activeWorkerRef.current = null;
@@ -720,18 +728,26 @@ export default function App() {
       const launchYear = sat.launch_date ? parseInt(sat.launch_date.substring(0, 4), 10) : null;
       const notYetLaunched = timelineYear !== null && (!launchYear || launchYear > timelineYear);
 
+      // Isolation mode: collapse every sat except the selected one
+      if (selected && sat.norad_cat_id !== selected.norad_cat_id) {
+        pa.array[i * 3] = 0; pa.array[i * 3 + 1] = 0; pa.array[i * 3 + 2] = 0;
+        newColors.push(0, 0, 0);
+        sat.timelineHidden = true;
+        return;
+      }
+
       if (notYetLaunched) {
-        // Move inside the Earth — invisible and unclickable
         pa.array[i * 3] = 0; pa.array[i * 3 + 1] = 0; pa.array[i * 3 + 2] = 0;
         newColors.push(0, 0, 0);
         sat.timelineHidden = true;
       } else {
         if (sat.timelineHidden) {
-          // Restore to last known position when year is moved forward again
           pa.array[i * 3] = sat.x; pa.array[i * 3 + 1] = sat.y; pa.array[i * 3 + 2] = sat.z;
         }
         sat.timelineHidden = false;
-        if (satVisible(sat)) {
+        if (selected && sat.norad_cat_id === selected.norad_cat_id) {
+          newColors.push(1, 0.95, 0.1); // bright gold
+        } else if (satVisible(sat)) {
           const [r, g, b] = catRGB[sat.category] || [1, 1, 1];
           newColors.push(r, g, b);
         } else {
@@ -755,7 +771,7 @@ export default function App() {
     });
     shellsRef.current = [];
 
-    if (active.length === 0 || !earth) return;
+    if (selected || active.length === 0 || !earth) return;
 
     const MAX_ORBITS = 300;
     const N = 72; // points per orbit
@@ -830,7 +846,7 @@ export default function App() {
       earth.add(orbitLines);
       shellsRef.current.push(orbitLines);
     });
-  }, [active, selectedCodes, timelineYear]);
+  }, [active, selectedCodes, timelineYear, selected]);
 
   // Hide ISS when timeline is set before its launch year (Zarya module: Nov 1998)
   useEffect(() => {
@@ -839,6 +855,41 @@ export default function App() {
     if (issTrailRef.current?.mesh) issTrailRef.current.mesh.visible = !hidden;
     if (issFutureRef.current) issFutureRef.current.visible = !hidden;
   }, [timelineYear]);
+
+  // Isolated orbit ring for selected satellite
+  useEffect(() => {
+    const earth = earthRef.current;
+    if (isolatedOrbitRef.current) {
+      if (earth) earth.remove(isolatedOrbitRef.current);
+      isolatedOrbitRef.current.geometry.dispose();
+      isolatedOrbitRef.current.material.dispose();
+      isolatedOrbitRef.current = null;
+    }
+    if (!selected || !earth || !selected.a) return;
+
+    const { a, b, c, sinI, cosI, sinR, cosR } = selected;
+    const N = 128;
+    const pts = [];
+    for (let j = 0; j < N; j++) {
+      const theta = (j / N) * Math.PI * 2;
+      const xOrb = a * Math.cos(theta) - c;
+      const zOrb = b * Math.sin(theta);
+      const zeq  = zOrb * cosI;
+      pts.push(xOrb * cosR - zeq * sinR, zOrb * sinI, xOrb * sinR + zeq * cosR);
+    }
+    const segs = [];
+    for (let j = 0; j < N; j++) {
+      const j3 = j * 3, n3 = ((j + 1) % N) * 3;
+      segs.push(pts[j3], pts[j3+1], pts[j3+2], pts[n3], pts[n3+1], pts[n3+2]);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(segs, 3));
+    const catColor = new THREE.Color(CATEGORIES.find(cat => cat.id === selected.category)?.color || "#ffffff");
+    const line = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: catColor, transparent: true, opacity: 0.9 }));
+    line.renderOrder = 3;
+    earth.add(line);
+    isolatedOrbitRef.current = line;
+  }, [selected]);
 
   // ISS live tracking
   useEffect(() => {
