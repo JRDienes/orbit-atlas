@@ -48,6 +48,32 @@ const CATEGORY_CODES = {
   rocket_body:   ["Type: ROCKET BODY"],
 };
 
+const COUNTRY_NAMES = {
+  US: "United States", CA: "Canada", AUS: "Australia", NZ: "New Zealand",
+  GLOB: "Global / Intelsat", ORB: "Orbcomm", O3B: "O3B Networks", ITSO: "ITSO",
+  UK: "United Kingdom", IM: "Isle of Man",
+  FR: "France", GER: "Germany", IT: "Italy", SPN: "Spain", NOR: "Norway",
+  SWED: "Sweden", BEL: "Belgium", NETH: "Netherlands", SWTZ: "Switzerland",
+  DEN: "Denmark", FIN: "Finland", POR: "Portugal", POL: "Poland",
+  CZE: "Czech Republic", CZCH: "Czech Republic", HUN: "Hungary", ROM: "Romania",
+  EST: "Estonia", LTU: "Lithuania", HRV: "Croatia", SVN: "Slovenia",
+  FGER: "West Germany", GREC: "Greece", LUXE: "Luxembourg", TURK: "Turkey",
+  ESA: "European Space Agency", EUME: "EUMETSAT", EUTE: "Eutelsat",
+  SES: "SES S.A.", FRIT: "France / Italy",
+  CIS: "Russia / CIS", RUS: "Russia", SU: "Soviet Union", USSR: "Soviet Union",
+  BELA: "Belarus", KAZ: "Kazakhstan", UKR: "Ukraine", AZER: "Azerbaijan",
+  SEAL: "Sea Launch", TMMC: "Turkmencosmos", STCT: "Russia / Kazakhstan",
+  PRC: "China", CHBZ: "China / Brazil", CHLE: "China / Luxembourg",
+  NICO: "China / Nigeria", ABS: "Asia Broadcast Satellite",
+  PAKI: "Pakistan", LAOS: "Laos", NKOR: "North Korea",
+  JPN: "Japan", IND: "India",
+  SAUD: "Saudi Arabia", UAE: "United Arab Emirates", QAT: "Qatar",
+  KWT: "Kuwait", BHR: "Bahrain", JOR: "Jordan", IRAN: "Iran", IRAQ: "Iraq",
+  AB: "Arab Satellite Comms. Org.",
+  SKOR: "South Korea", INDO: "Indonesia", MALA: "Malaysia", THAI: "Thailand",
+  SING: "Singapore", BGD: "Bangladesh", TWN: "Taiwan", ASRA: "AsiaSat", RP: "Philippines",
+};
+
 function categorize(sat) {
   const name = sat.object_name?.toUpperCase() || "";
   const country = sat.country_code || "";
@@ -122,6 +148,8 @@ export default function App() {
   const mountRef = useRef(null);
   const [active, setActive] = useState([]);
   const [selectedCodes, setSelectedCodes] = useState([]);
+  const [focusedCodes, setFocusedCodes] = useState([]);
+  const [focusedIndex, setFocusedIndex] = useState(0);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showOverlay, setShowOverlay] = useState(true);
@@ -1012,6 +1040,7 @@ export default function App() {
             {/* Country Code Key */}
             <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "16px", backdropFilter: "blur(10px)" }}>
               <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 12 }}>COUNTRY CODES</div>
+              <div style={{ maxHeight: 280, overflowY: "auto", paddingRight: 4 }}>
               {active.map(catId => {
                 const cat = CATEGORIES.find(c => c.id === catId);
                 const codes = catId === "rest_of_world"
@@ -1026,7 +1055,21 @@ export default function App() {
                         const isSelected = selectedCodes.includes(code);
                         const isDimmed = codes.filter(c => selectedCodes.includes(c)).length > 0 && !isSelected;
                         return (
-                          <span key={code} onClick={() => setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])}
+                          <span key={code} onClick={() => {
+                              setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
+                              const isPlain = !code.startsWith("Name:") && !code.startsWith("Type:") && code !== "All other codes";
+                              if (isPlain) {
+                                const exists = focusedCodes.findIndex(f => f.code === code);
+                                if (exists >= 0) {
+                                  const next = focusedCodes.filter((_, i) => i !== exists);
+                                  setFocusedCodes(next);
+                                  setFocusedIndex(Math.max(0, exists < focusedIndex ? focusedIndex - 1 : Math.min(focusedIndex, next.length - 1)));
+                                } else {
+                                  setFocusedCodes(prev => [...prev, { code, catId }]);
+                                  setFocusedIndex(focusedCodes.length);
+                                }
+                              }
+                            }}
                             style={{ background: isSelected ? `${cat.color}44` : `${cat.color}18`, border: `1px solid ${isSelected ? cat.color : `${cat.color}44`}`, borderRadius: 3, color: isSelected ? cat.color : `${cat.color}cc`, fontSize: 9, padding: "2px 5px", letterSpacing: 1, cursor: "pointer", opacity: isDimmed ? 0.35 : 1, transition: "opacity 0.15s, background 0.15s" }}>
                             {code}
                           </span>
@@ -1041,12 +1084,57 @@ export default function App() {
                   <div onClick={() => setSelectedCodes([])} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET CODE FILTER</div>
                 </div>
               )}
+              </div>
             </div>
           </div>
 
+          {/* Country satellite list panel */}
+          {focusedCodes.length > 0 && (() => {
+            const current = focusedCodes[focusedIndex] || focusedCodes[0];
+            const cat = CATEGORIES.find(c => c.id === current.catId);
+            const accentColor = cat?.color || "#00d4ff";
+            const listSats = satsRef.current
+              .filter(s => s.country_code === current.code)
+              .sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1);
+            const fullName = COUNTRY_NAMES[current.code] || current.code;
+            const total = focusedCodes.length;
+            const btnStyle = (enabled) => ({ color: enabled ? accentColor : `${accentColor}33`, cursor: enabled ? "pointer" : "default", fontSize: 18, padding: "0 6px", userSelect: "none", lineHeight: 1 });
+            return (
+              <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, right: 20, width: 300, background: "#020818cc", border: `1px solid ${accentColor}33`, borderRadius: 8, padding: "18px", backdropFilter: "blur(10px)", maxHeight: "calc(100vh - 330px)", display: "flex", flexDirection: "column" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                    <span onClick={() => total > 1 && setFocusedIndex((focusedIndex - 1 + total) % total)} style={btnStyle(total > 1)}>‹</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: accentColor, fontSize: 16, fontWeight: "bold", letterSpacing: 2 }}>{current.code}</div>
+                      <div style={{ color: "#ffffff", fontSize: 14, marginTop: 3, letterSpacing: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fullName}</div>
+                    </div>
+                    <span onClick={() => total > 1 && setFocusedIndex((focusedIndex + 1) % total)} style={btnStyle(total > 1)}>›</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, paddingLeft: 8 }}>
+                    {total > 1 && <span style={{ color: `${accentColor}66`, fontSize: 11, letterSpacing: 1 }}>{focusedIndex + 1}/{total}</span>}
+                    <div onClick={() => { setFocusedCodes([]); setFocusedIndex(0); }} style={{ color: "#00d4ff88", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</div>
+                  </div>
+                </div>
+                <div style={{ color: `${accentColor}88`, fontSize: 11, letterSpacing: 2, marginBottom: 12, flexShrink: 0 }}>{listSats.length} OBJECTS</div>
+                <div style={{ overflowY: "auto", flex: 1 }}>
+                  {listSats.map(sat => (
+                    <div key={sat.norad_cat_id}
+                      onClick={() => setSelected(sat)}
+                      onMouseEnter={e => e.currentTarget.style.background = `${accentColor}11`}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 6px", borderBottom: `1px solid ${accentColor}11`, cursor: "pointer", borderRadius: 3 }}>
+                      <div style={{ color: "#dddddd", fontSize: 13, letterSpacing: 0.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, paddingRight: 10 }}>{sat.object_name || "UNKNOWN"}</div>
+                      <div style={{ color: `${accentColor}88`, fontSize: 12, flexShrink: 0 }}>{sat.launch_date ? sat.launch_date.substring(0, 4) : "—"}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Selected satellite panel */}
           {selected && (
-            <div style={{ position: "absolute", top: "50%", right: 20, transform: "translateY(-50%)", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: 24, backdropFilter: "blur(10px)", minWidth: 260, maxWidth: 300 }}>
+            <div style={{ position: "absolute", top: "50%", right: focusedCodes.length > 0 ? 340 : 20, transform: "translateY(-50%)", transition: "right 0.2s", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: 24, backdropFilter: "blur(10px)", minWidth: 260, maxWidth: 300 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>OBJECT DATA</div>
                 <div onClick={() => setSelected(null)} style={{ color: "#00d4ff88", cursor: "pointer", fontSize: 18 }}>×</div>
@@ -1205,7 +1293,21 @@ export default function App() {
                             const isSelected = selectedCodes.includes(code);
                             const isDimmed = codes.filter(c => selectedCodes.includes(c)).length > 0 && !isSelected;
                             return (
-                              <span key={code} onClick={() => setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])}
+                              <span key={code} onClick={() => {
+                                  setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
+                                  const isPlain = !code.startsWith("Name:") && !code.startsWith("Type:") && code !== "All other codes";
+                                  if (isPlain) {
+                                    const exists = focusedCodes.findIndex(f => f.code === code);
+                                    if (exists >= 0) {
+                                      const next = focusedCodes.filter((_, i) => i !== exists);
+                                      setFocusedCodes(next);
+                                      setFocusedIndex(Math.max(0, exists < focusedIndex ? focusedIndex - 1 : Math.min(focusedIndex, next.length - 1)));
+                                    } else {
+                                      setFocusedCodes(prev => [...prev, { code, catId }]);
+                                      setFocusedIndex(focusedCodes.length);
+                                    }
+                                  }
+                                }}
                                 style={{ background: isSelected ? `${cat.color}44` : `${cat.color}18`, border: `1px solid ${isSelected ? cat.color : `${cat.color}44`}`, borderRadius: 4, color: isSelected ? cat.color : `${cat.color}cc`, fontSize: 11, padding: "4px 8px", letterSpacing: 1, cursor: "pointer", opacity: isDimmed ? 0.35 : 1 }}>
                                 {code}
                               </span>
