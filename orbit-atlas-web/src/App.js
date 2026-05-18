@@ -833,9 +833,12 @@ export default function App() {
     const N = 72; // points per orbit
 
     if (pinnedSats.size > 0) {
-      [...pinnedSats].forEach(sat => {
+      const pinnedArr = [...pinnedSats];
+      const activeSat = pinnedArr[Math.min(pinnedViewIndex, pinnedArr.length - 1)];
+      pinnedArr.forEach(sat => {
         if (!sat.apoapsis || !sat.inclination) return;
-        const catColor = new THREE.Color(CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff");
+        const isActive = sat === activeSat;
+        const catColor = isActive ? new THREE.Color(0xDDEEFF) : new THREE.Color(CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff");
         const inc  = (sat.inclination * Math.PI) / 180;
         const raan = sat.lon ?? (sat.norad_cat_id % 628) / 100;
         const sinI = Math.sin(inc), cosI = Math.cos(inc);
@@ -861,7 +864,7 @@ export default function App() {
         }
         const orbitGeo = new THREE.BufferGeometry();
         orbitGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-        const orbitLines = new THREE.LineSegments(orbitGeo, new THREE.LineBasicMaterial({ color: catColor, transparent: true, opacity: 0.7 }));
+        const orbitLines = new THREE.LineSegments(orbitGeo, new THREE.LineBasicMaterial({ color: catColor, transparent: true, opacity: isActive ? 0.95 : 0.5 }));
         orbitLines.renderOrder = 2;
         earth.add(orbitLines);
         shellsRef.current.push(orbitLines);
@@ -939,7 +942,7 @@ export default function App() {
       earth.add(orbitLines);
       shellsRef.current.push(orbitLines);
     });
-  }, [active, selectedCodes, timelineYear, selected, pinnedSats]);
+  }, [active, selectedCodes, timelineYear, selected, pinnedSats, pinnedViewIndex]);
 
   // Keep pinnedSatsRef in sync for animation loop reads
   useEffect(() => { pinnedSatsRef.current = pinnedSats; }, [pinnedSats]);
