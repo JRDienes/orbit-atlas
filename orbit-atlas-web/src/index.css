@@ -21,3 +21,25 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* Styled scrollbars — webkit (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #00d4ff33;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00d4ff66;
+}
+
+/* Styled scrollbars — Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #00d4ff33 transparent;
+}
