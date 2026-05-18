@@ -164,6 +164,8 @@ export default function App() {
   // Only show welcome on first visit per session — refreshes skip it
   const isFirstVisitRef = useRef(!sessionStorage.getItem('orbit-welcomed'));
   const [issData, setIssData] = useState(null);
+  const [issEnabled, setIssEnabled] = useState(true);
+  const [issHover, setIssHover] = useState(false);
   const satsRef = useRef([]);
   const pointsRef = useRef([]);
   const sceneRef = useRef(null);
@@ -177,6 +179,10 @@ export default function App() {
   const issFutureRef = useRef(null);
   const issSatrecRef = useRef(null);
   const chunkIdxRef = useRef(0);
+  const cameraRef = useRef(null);
+  const flyToISSRef = useRef(null);
+  const issHaloRef = useRef(null);
+  const issHaloVec = useRef(new THREE.Vector3());
   const activeWorkerRef = useRef(null);
   const introTimeoutsRef = useRef([]);
   const lastFrameTimeRef = useRef(null);
@@ -296,6 +302,7 @@ export default function App() {
     sceneRef.current = scene;
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
     camera.position.z = 7;
+    cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -363,6 +370,7 @@ export default function App() {
     let prevMouse = { x: 0, y: 0 };
     let mouseDownPos = { x: 0, y: 0 };
     const onMouseDown = e => {
+      flyToISSRef.current = null;
       isDragging = true;
       dragMoved = false;
       prevMouse = { x: e.clientX, y: e.clientY };
@@ -490,9 +498,41 @@ export default function App() {
     const CHUNK = 3000;
     const animate = () => {
       requestAnimationFrame(animate);
-      if (!isDragging) { earth.rotation.y += 0.0000012 * timeScaleRef.current; wire.rotation.y += 0.0000012 * timeScaleRef.current; }
+      // Fly-to ISS animation
+      if (flyToISSRef.current) {
+        const { tx, ty } = flyToISSRef.current;
+        const lerpAngle = (a, b, t) => { let d = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI; return a + d * t; };
+        earth.rotation.x = lerpAngle(earth.rotation.x, tx, 0.06);
+        earth.rotation.y = lerpAngle(earth.rotation.y, ty, 0.06);
+        wire.rotation.x = earth.rotation.x;
+        wire.rotation.y = earth.rotation.y;
+        const dxA = Math.abs(lerpAngle(earth.rotation.x, tx, 1));
+        const dyA = Math.abs(lerpAngle(earth.rotation.y, ty, 1));
+        if (dxA < 0.001 && dyA < 0.001) flyToISSRef.current = null;
+      } else if (!isDragging) {
+        earth.rotation.y += 0.0000012 * timeScaleRef.current;
+        wire.rotation.y += 0.0000012 * timeScaleRef.current;
+      }
       if (issMarkerRef.current?.material) {
-        issMarkerRef.current.material.size = 0.030 + Math.sin(Date.now() * 0.003) * 0.010;
+        const zoomScale = Math.max(1, camera.position.z / 2);
+        issMarkerRef.current.material.size = (0.030 + Math.sin(Date.now() * 0.003) * 0.010) * zoomScale;
+      }
+      // ISS halo ping
+      const halo = issHaloRef.current;
+      if (halo) {
+        const issVisible = issMarkerRef.current?.visible;
+        halo.visible = !!issVisible;
+        if (issVisible) {
+          const attr = issMarkerRef.current.geometry.getAttribute("position");
+          issHaloVec.current.set(attr.getX(0), attr.getY(0), attr.getZ(0));
+          issHaloVec.current.applyMatrix4(earth.matrixWorld);
+          halo.position.copy(issHaloVec.current);
+          halo.lookAt(camera.position);
+          const zoomScale = Math.max(1, camera.position.z / 2);
+          const t = (Date.now() % 2000) / 2000;
+          halo.scale.setScalar((0.02 + t * 0.14) * zoomScale);
+          halo.material.opacity = (1 - t) * 0.35;
+        }
       }
       // Fade satellite points in after worker delivers them
       const pMat = pointsRef.current?.mat;
@@ -627,6 +667,16 @@ export default function App() {
     earth.add(issMarkerMesh);
     issMarkerRef.current = issMarkerMesh;
 
+    // ISS halo ping (world-space ring, camera-facing, animated)
+    const issHaloGeo = new THREE.RingGeometry(0.9, 1.0, 64);
+    const issHaloMat = new THREE.MeshBasicMaterial({ color: 0xFFD700, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+    const issHaloMesh = new THREE.Mesh(issHaloGeo, issHaloMat);
+    issHaloMesh.renderOrder = 3;
+    issHaloMesh.frustumCulled = false;
+    issHaloMesh.visible = false;
+    scene.add(issHaloMesh);
+    issHaloRef.current = issHaloMesh;
+
     // ISS past trail
     const trailPosBuf = new Float32Array(ISS_TRAIL_LEN * 3);
     const trailColBuf = new Float32Array(ISS_TRAIL_LEN * 3);
@@ -679,6 +729,8 @@ export default function App() {
       hoverMat.dispose();
       issMarkerGeo.dispose();
       issMarkerMat.dispose();
+      issHaloGeo.dispose();
+      issHaloMat.dispose();
       issTrailGeo.dispose();
       issTrailMesh.material.dispose();
       issFutureGeo.dispose();
@@ -892,13 +944,13 @@ export default function App() {
   // Keep pinnedSatsRef in sync for animation loop reads
   useEffect(() => { pinnedSatsRef.current = pinnedSats; }, [pinnedSats]);
 
-  // Hide ISS when timeline is set before its launch year (Zarya module: Nov 1998)
+  // Hide ISS when timeline is set before its launch year (Zarya module: Nov 1998) or tracker is toggled off
   useEffect(() => {
-    const hidden = timelineYear !== null && timelineYear < 1998;
+    const hidden = !issEnabled || (timelineYear !== null && timelineYear < 1998);
     if (issMarkerRef.current) issMarkerRef.current.visible = !hidden;
     if (issTrailRef.current?.mesh) issTrailRef.current.mesh.visible = !hidden;
     if (issFutureRef.current) issFutureRef.current.visible = !hidden;
-  }, [timelineYear]);
+  }, [timelineYear, issEnabled]);
 
   // Isolated orbit ring for selected satellite
   useEffect(() => {
@@ -1368,11 +1420,36 @@ export default function App() {
               </div>
             </div>
 
-            {/* ISS Tracker */}
-            <div style={{ background: "#020818cc", border: "1px solid #FFD70033", borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", minWidth: 260 }}>
+            {/* ISS Tracker — click to toggle */}
+            <div
+              onClick={() => {
+                const enabling = !issEnabled;
+                setIssEnabled(enabling);
+                if (enabling && issData) {
+                  const lat = (Number(issData.latitude) * Math.PI) / 180;
+                  const lon = (Number(issData.longitude) * Math.PI) / 180;
+                  const r = altToRadius(Number(issData.altitude));
+                  const xl = r * Math.cos(lat) * Math.cos(lon);
+                  const zl = r * Math.cos(lat) * Math.sin(lon);
+                  const yl = r * Math.sin(lat);
+                  const d = Math.sqrt(xl * xl + zl * zl);
+                  flyToISSRef.current = { tx: -Math.atan2(yl, d) * 0.4, ty: Math.atan2(-xl, zl) };
+                }
+              }}
+              onMouseEnter={() => setIssHover(true)}
+              onMouseLeave={() => setIssHover(false)}
+              style={{
+                background: "#020818cc",
+                border: `1px solid ${issHover ? "#FFD70088" : "#FFD70033"}`,
+                borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", minWidth: 260,
+                cursor: "pointer",
+                boxShadow: issHover ? `0 0 18px #FFD70033, 0 0 6px #FFD70022` : "none",
+                transition: "box-shadow 0.2s, border-color 0.2s",
+              }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#FFD700", boxShadow: "0 0 6px #FFD700", flexShrink: 0 }} />
+                <div style={{ width: 7, height: 7, borderRadius: "50%", background: issEnabled ? "#FFD700" : "#FFD70044", boxShadow: issEnabled ? "0 0 6px #FFD700" : "none", flexShrink: 0 }} />
                 <div style={{ color: "#FFD700", fontSize: 10, letterSpacing: 3 }}>ISS LIVE</div>
+                {!issEnabled && <div style={{ color: "#FFD70066", fontSize: 9, letterSpacing: 2, marginLeft: "auto" }}>OFF</div>}
               </div>
               {timelineYear !== null && timelineYear < 1998 ? (
                 <div style={{ color: "#FFD70044", fontSize: 10, letterSpacing: 1 }}>NOT YET LAUNCHED<br/><span style={{ fontSize: 9, letterSpacing: 1 }}>ZARYA: NOV 1998</span></div>
@@ -1386,7 +1463,7 @@ export default function App() {
                 ].map(([label, value]) => (
                   <div key={label}>
                     <div style={{ color: "#FFD70066", fontSize: 9, letterSpacing: 2 }}>{label}</div>
-                    <div style={{ color: "#FFD700", fontSize: 11 }}>{value}</div>
+                    <div style={{ color: issEnabled ? "#FFD700" : "#FFD70044", fontSize: 11 }}>{value}</div>
                   </div>
                 ))}
                 </div>
