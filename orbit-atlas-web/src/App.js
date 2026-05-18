@@ -152,6 +152,7 @@ export default function App() {
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [selected, setSelected] = useState(null);
   const [pinnedSats, setPinnedSats] = useState(new Set());
+  const [pinnedViewIndex, setPinnedViewIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showOverlay, setShowOverlay] = useState(true);
   const [overlayFading, setOverlayFading] = useState(false);
@@ -1130,7 +1131,7 @@ export default function App() {
                   </div>
                 ))}
                 <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 12 }}>
-                  <div onClick={() => { setActive([]); setSelectedCodes([]); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
+                  <div onClick={() => { setActive([]); setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedCodes([]); setFocusedIndex(0); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
                 </div>
               </div>
             </div>
@@ -1179,7 +1180,7 @@ export default function App() {
                 })}
                 {selectedCodes.length > 0 && (
                   <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 10 }}>
-                    <div onClick={() => setSelectedCodes([])} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET CODE FILTER</div>
+                    <div onClick={() => { setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedCodes([]); setFocusedIndex(0); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET CODE FILTER</div>
                   </div>
                 )}
               </div>
@@ -1191,6 +1192,9 @@ export default function App() {
           {(() => {
             const hasFocused = focusedCodes.length > 0;
             const current = hasFocused ? (focusedCodes[focusedIndex] || focusedCodes[0]) : null;
+            const pinnedArr = [...pinnedSats];
+            const clampedIdx = pinnedArr.length > 0 ? Math.min(pinnedViewIndex, pinnedArr.length - 1) : 0;
+            const displaySat = pinnedArr.length > 0 ? pinnedArr[clampedIdx] : selected;
             const cat = current ? CATEGORIES.find(c => c.id === current.catId) : null;
             const accentColor = cat?.color || "#00d4ff";
             const listSats = current
@@ -1218,7 +1222,7 @@ export default function App() {
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                           {total > 1 && <span style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 1 }}>{focusedIndex + 1}/{total}</span>}
-                          <span onClick={() => { setFocusedCodes([]); setFocusedIndex(0); }} style={{ color: "#00d4ff44", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</span>
+                          <span onClick={() => { setFocusedCodes([]); setFocusedIndex(0); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setSelectedCodes([]); }} style={{ color: "#00d4ff44", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</span>
                         </div>
                       </div>
                     ) : (
@@ -1227,7 +1231,7 @@ export default function App() {
                     {hasFocused && (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                         <div style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 2 }}>{listSats.length} OBJECTS</div>
-                        {pinnedSats.size > 0 && <span onClick={() => setPinnedSats(new Set())} style={{ color: `${accentColor}66`, fontSize: 9, letterSpacing: 2, cursor: "pointer", borderLeft: `1px solid ${accentColor}22`, paddingLeft: 8 }}>CLEAR SELECTION</span>}
+                        {pinnedSats.size > 0 && current && <span onClick={() => setPinnedSats(prev => { const n = new Set(prev); for (const s of n) { if (s.country_code === current.code) n.delete(s); } return n; })} style={{ color: `${accentColor}66`, fontSize: 9, letterSpacing: 2, cursor: "pointer", borderLeft: `1px solid ${accentColor}22`, paddingLeft: 8 }}>CLEAR SELECTION</span>}
                       </div>
                     )}
                   </div>
@@ -1235,18 +1239,30 @@ export default function App() {
                   <div style={{ flex: 1, overflowY: "auto", paddingBottom: 6 }}>
                     {hasFocused ? listSats.map(sat => {
                       const isPinned = pinnedSats.has(sat);
-                      const togglePin = () => setPinnedSats(prev => { const n = new Set(prev); n.has(sat) ? n.delete(sat) : n.add(sat); return n; });
+                      const isActive = isPinned && sat === pinnedArr[clampedIdx];
+                      const togglePin = () => {
+                        setPinnedSats(prev => {
+                          const n = new Set(prev);
+                          if (n.has(sat)) {
+                            n.delete(sat);
+                          } else {
+                            n.add(sat);
+                            setPinnedViewIndex(n.size - 1);
+                          }
+                          return n;
+                        });
+                      };
                       return (
                         <div key={sat.norad_cat_id}
                           onClick={togglePin}
                           onMouseEnter={e => { if (!isPinned) e.currentTarget.style.background = `${accentColor}11`; }}
                           onMouseLeave={e => { if (!isPinned) e.currentTarget.style.background = "transparent"; }}
-                          style={{ display: "flex", alignItems: "center", padding: "6px 4px", borderBottom: `1px solid ${accentColor}0d`, cursor: "pointer", borderRadius: 3, background: isPinned ? `${accentColor}22` : "transparent" }}>
+                          style={{ display: "flex", alignItems: "center", padding: "6px 4px", borderBottom: `1px solid ${accentColor}0d`, cursor: "pointer", borderRadius: 3, background: isActive ? "rgba(220,230,240,0.18)" : isPinned ? `${accentColor}22` : "transparent" }}>
                           {/* Checkbox */}
                           <div style={{ width: 13, height: 13, borderRadius: 2, border: `1px solid ${isPinned ? accentColor : `${accentColor}33`}`, background: isPinned ? `${accentColor}33` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginRight: 8 }}>
                             {isPinned && <div style={{ width: 7, height: 7, borderRadius: 1, background: accentColor }} />}
                           </div>
-                          <div style={{ color: isPinned ? "#ffffff" : "#dddddd", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, paddingRight: 8 }}>{sat.object_name || "UNKNOWN"}</div>
+                          <div style={{ color: isActive ? "#ffffff" : isPinned ? "#cccccc" : "#888888", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, paddingRight: 8 }}>{sat.object_name || "UNKNOWN"}</div>
                           <div style={{ color: `${accentColor}77`, fontSize: 11, flexShrink: 0 }}>{sat.launch_date ? sat.launch_date.substring(0, 4) : "—"}</div>
                         </div>
                       );
@@ -1260,14 +1276,19 @@ export default function App() {
                 <div style={{ flex: 3, minHeight: 0, borderTop: `1px solid ${accentColor}22`, overflowY: "auto", padding: "16px 14px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexShrink: 0 }}>
                     <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>OBJECT DATA</div>
-                    {selected && <span onClick={() => setSelected(null)} style={{ color: "#00d4ff44", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</span>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {pinnedArr.length > 1 && <span onClick={() => { const ni = (clampedIdx - 1 + pinnedArr.length) % pinnedArr.length; setPinnedViewIndex(ni); const fi = focusedCodes.findIndex(f => f.code === pinnedArr[ni].country_code); if (fi !== -1) setFocusedIndex(fi); }} style={{ color: accentColor, cursor: "pointer", fontSize: 18, padding: "0 2px", userSelect: "none", lineHeight: 1 }}>‹</span>}
+                      {pinnedArr.length > 1 && <span style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 1 }}>{clampedIdx + 1}/{pinnedArr.length}</span>}
+                      {pinnedArr.length > 1 && <span onClick={() => { const ni = (clampedIdx + 1) % pinnedArr.length; setPinnedViewIndex(ni); const fi = focusedCodes.findIndex(f => f.code === pinnedArr[ni].country_code); if (fi !== -1) setFocusedIndex(fi); }} style={{ color: accentColor, cursor: "pointer", fontSize: 18, padding: "0 2px", userSelect: "none", lineHeight: 1 }}>›</span>}
+                      {selected && pinnedArr.length === 0 && <span onClick={() => setSelected(null)} style={{ color: "#00d4ff44", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</span>}
+                    </div>
                   </div>
-                  {selected ? (
-                    [["NAME", selected.object_name], ["TYPE", selected.object_type], ["COUNTRY", selected.country_code],
-                     ["LAUNCHED", selected.launch_date], ["INCLINATION", selected.inclination ? `${selected.inclination}°` : "N/A"],
-                     ["APOAPSIS", selected.apoapsis ? `${Math.round(selected.apoapsis)} km` : "N/A"],
-                     ["PERIAPSIS", selected.periapsis ? `${Math.round(selected.periapsis)} km` : "N/A"],
-                     ["PERIOD", selected.period ? `${Math.round(selected.period)} min` : "N/A"],
+                  {displaySat ? (
+                    [["NAME", displaySat.object_name], ["TYPE", displaySat.object_type], ["COUNTRY", displaySat.country_code],
+                     ["LAUNCHED", displaySat.launch_date], ["INCLINATION", displaySat.inclination ? `${displaySat.inclination}°` : "N/A"],
+                     ["APOAPSIS", displaySat.apoapsis ? `${Math.round(displaySat.apoapsis)} km` : "N/A"],
+                     ["PERIAPSIS", displaySat.periapsis ? `${Math.round(displaySat.periapsis)} km` : "N/A"],
+                     ["PERIOD", displaySat.period ? `${Math.round(displaySat.period)} min` : "N/A"],
                     ].map(([label, value]) => (
                       <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 11 }}>
                         <div style={{ color: "#00d4ff66", fontSize: 11, letterSpacing: 1, flexShrink: 0 }}>{label}</div>
