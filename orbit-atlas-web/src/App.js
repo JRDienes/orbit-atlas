@@ -151,6 +151,7 @@ export default function App() {
   const [focusedCodes, setFocusedCodes] = useState([]);
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [selected, setSelected] = useState(null);
+  const [pinnedSats, setPinnedSats] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [showOverlay, setShowOverlay] = useState(true);
   const [overlayFading, setOverlayFading] = useState(false);
@@ -168,6 +169,7 @@ export default function App() {
   const earthRef = useRef(null);
   const shellsRef = useRef([]);
   const isolatedOrbitRef = useRef(null);
+  const pinnedSatsRef = useRef(new Set());
   const highlightRef = useRef(null);
   const issMarkerRef = useRef(null);
   const issTrailRef = useRef(null);
@@ -728,31 +730,32 @@ export default function App() {
       const launchYear = sat.launch_date ? parseInt(sat.launch_date.substring(0, 4), 10) : null;
       const notYetLaunched = timelineYear !== null && (!launchYear || launchYear > timelineYear);
 
-      // Isolation mode: collapse every sat except the selected one
-      if (selected && sat.norad_cat_id !== selected.norad_cat_id) {
+      const inPinSet = pinnedSats.size > 0 && pinnedSats.has(sat);
+      const isSelected = !!selected && sat.norad_cat_id === selected.norad_cat_id;
+
+      const shouldHide =
+        (pinnedSats.size > 0 && !inPinSet) ||
+        (pinnedSats.size === 0 && !!selected && !isSelected);
+
+      if (shouldHide || notYetLaunched) {
         pa.array[i * 3] = 0; pa.array[i * 3 + 1] = 0; pa.array[i * 3 + 2] = 0;
         newColors.push(0, 0, 0);
         sat.timelineHidden = true;
         return;
       }
 
-      if (notYetLaunched) {
-        pa.array[i * 3] = 0; pa.array[i * 3 + 1] = 0; pa.array[i * 3 + 2] = 0;
-        newColors.push(0, 0, 0);
-        sat.timelineHidden = true;
+      // Restore position for sats coming out of hidden state or that are pinned/selected
+      if (sat.timelineHidden || inPinSet || isSelected) {
+        pa.array[i * 3] = sat.x; pa.array[i * 3 + 1] = sat.y; pa.array[i * 3 + 2] = sat.z;
+      }
+      sat.timelineHidden = false;
+      if (isSelected) {
+        newColors.push(1, 0.95, 0.1); // bright gold
+      } else if (inPinSet || satVisible(sat)) {
+        const [r, g, b] = catRGB[sat.category] || [1, 1, 1];
+        newColors.push(r, g, b);
       } else {
-        if (sat.timelineHidden) {
-          pa.array[i * 3] = sat.x; pa.array[i * 3 + 1] = sat.y; pa.array[i * 3 + 2] = sat.z;
-        }
-        sat.timelineHidden = false;
-        if (selected && sat.norad_cat_id === selected.norad_cat_id) {
-          newColors.push(1, 0.95, 0.1); // bright gold
-        } else if (satVisible(sat)) {
-          const [r, g, b] = catRGB[sat.category] || [1, 1, 1];
-          newColors.push(r, g, b);
-        } else {
-          newColors.push(0.05, 0.05, 0.1);
-        }
+        newColors.push(0.05, 0.05, 0.1);
       }
     });
     pa.needsUpdate = true;
@@ -775,6 +778,43 @@ export default function App() {
 
     const MAX_ORBITS = 300;
     const N = 72; // points per orbit
+
+    if (pinnedSats.size > 0) {
+      [...pinnedSats].forEach(sat => {
+        if (!sat.apoapsis || !sat.inclination) return;
+        const catColor = new THREE.Color(CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff");
+        const inc  = (sat.inclination * Math.PI) / 180;
+        const raan = sat.lon ?? (sat.norad_cat_id % 628) / 100;
+        const sinI = Math.sin(inc), cosI = Math.cos(inc);
+        const sinR = Math.sin(raan), cosR = Math.cos(raan);
+        const rApo  = altToRadius(sat.apoapsis);
+        const rPeri = altToRadius(sat.periapsis ?? sat.apoapsis);
+        const a = (rApo + rPeri) / 2;
+        const c = (rApo - rPeri) / 2;
+        const b = Math.sqrt(Math.max(0, a * a - c * c));
+
+        const pts = [];
+        for (let j = 0; j < N; j++) {
+          const theta = (j / N) * Math.PI * 2;
+          const xOrb = a * Math.cos(theta) - c;
+          const zOrb = b * Math.sin(theta);
+          const x = xOrb, y = zOrb * sinI, zeq = zOrb * cosI;
+          pts.push(x * cosR - zeq * sinR, y, x * sinR + zeq * cosR);
+        }
+        const positions = [];
+        for (let j = 0; j < N; j++) {
+          const j3 = j * 3, n3 = ((j + 1) % N) * 3;
+          positions.push(pts[j3], pts[j3+1], pts[j3+2], pts[n3], pts[n3+1], pts[n3+2]);
+        }
+        const orbitGeo = new THREE.BufferGeometry();
+        orbitGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        const orbitLines = new THREE.LineSegments(orbitGeo, new THREE.LineBasicMaterial({ color: catColor, transparent: true, opacity: 0.7 }));
+        orbitLines.renderOrder = 2;
+        earth.add(orbitLines);
+        shellsRef.current.push(orbitLines);
+      });
+      return;
+    }
 
     active.forEach(catId => {
       const selectedInCat = selectedCodes.filter(c => getFilterableCodes(catId).includes(c));
@@ -846,7 +886,10 @@ export default function App() {
       earth.add(orbitLines);
       shellsRef.current.push(orbitLines);
     });
-  }, [active, selectedCodes, timelineYear, selected]);
+  }, [active, selectedCodes, timelineYear, selected, pinnedSats]);
+
+  // Keep pinnedSatsRef in sync for animation loop reads
+  useEffect(() => { pinnedSatsRef.current = pinnedSats; }, [pinnedSats]);
 
   // Hide ISS when timeline is set before its launch year (Zarya module: Nov 1998)
   useEffect(() => {
@@ -1181,19 +1224,29 @@ export default function App() {
                     ) : (
                       <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>SATELLITE VIEWER</div>
                     )}
-                    {hasFocused && <div style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 2, marginTop: 6 }}>{listSats.length} OBJECTS</div>}
+                    {hasFocused && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                        <div style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 2 }}>{listSats.length} OBJECTS</div>
+                        {pinnedSats.size > 0 && <span onClick={() => setPinnedSats(new Set())} style={{ color: `${accentColor}66`, fontSize: 9, letterSpacing: 2, cursor: "pointer", borderLeft: `1px solid ${accentColor}22`, paddingLeft: 8 }}>CLEAR SELECTION</span>}
+                      </div>
+                    )}
                   </div>
                   {/* Scrollable list */}
                   <div style={{ flex: 1, overflowY: "auto", paddingBottom: 6 }}>
                     {hasFocused ? listSats.map(sat => {
-                      const isActive = selected && sat.norad_cat_id === selected.norad_cat_id;
+                      const isPinned = pinnedSats.has(sat);
+                      const togglePin = () => setPinnedSats(prev => { const n = new Set(prev); n.has(sat) ? n.delete(sat) : n.add(sat); return n; });
                       return (
                         <div key={sat.norad_cat_id}
-                          onClick={() => setSelected(prev => prev?.norad_cat_id === sat.norad_cat_id ? null : sat)}
-                          onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = `${accentColor}11`; }}
-                          onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
-                          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 4px", borderBottom: `1px solid ${accentColor}0d`, cursor: "pointer", borderRadius: 3, background: isActive ? `${accentColor}22` : "transparent" }}>
-                          <div style={{ color: isActive ? accentColor : "#dddddd", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, paddingRight: 8 }}>{sat.object_name || "UNKNOWN"}</div>
+                          onClick={togglePin}
+                          onMouseEnter={e => { if (!isPinned) e.currentTarget.style.background = `${accentColor}11`; }}
+                          onMouseLeave={e => { if (!isPinned) e.currentTarget.style.background = "transparent"; }}
+                          style={{ display: "flex", alignItems: "center", padding: "6px 4px", borderBottom: `1px solid ${accentColor}0d`, cursor: "pointer", borderRadius: 3, background: isPinned ? `${accentColor}22` : "transparent" }}>
+                          {/* Checkbox */}
+                          <div style={{ width: 13, height: 13, borderRadius: 2, border: `1px solid ${isPinned ? accentColor : `${accentColor}33`}`, background: isPinned ? `${accentColor}33` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginRight: 8 }}>
+                            {isPinned && <div style={{ width: 7, height: 7, borderRadius: 1, background: accentColor }} />}
+                          </div>
+                          <div style={{ color: isPinned ? "#ffffff" : "#dddddd", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, paddingRight: 8 }}>{sat.object_name || "UNKNOWN"}</div>
                           <div style={{ color: `${accentColor}77`, fontSize: 11, flexShrink: 0 }}>{sat.launch_date ? sat.launch_date.substring(0, 4) : "—"}</div>
                         </div>
                       );
