@@ -1071,139 +1071,164 @@ export default function App() {
       {/* ── DESKTOP LAYOUT ── */}
       {!isMobile && (
         <>
-          {/* Left Column — filter + key */}
-          <div style={{ position: "absolute", top: "50%", left: 20, transform: "translateY(-50%)", display: "flex", flexDirection: "column", gap: 10, width: 220 }}>
-            {/* Filter Sidebar */}
-            <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "20px 16px", backdropFilter: "blur(10px)", minWidth: 200 }}>
-              <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16 }}>FILTER OBJECTS</div>
-              {CATEGORIES.map(cat => (
-                <div key={cat.id} onClick={() => toggleCategory(cat.id)} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: "pointer", opacity: active.length === 0 || active.includes(cat.id) ? 1 : 0.4, transition: "opacity 0.2s" }}>
-                  <div style={{ width: 36, height: 18, borderRadius: 9, background: active.includes(cat.id) ? cat.color : "#1a1a2e", border: `1px solid ${cat.color}`, transition: "background 0.2s", position: "relative" }}>
-                    <div style={{ position: "absolute", top: 2, left: active.includes(cat.id) ? 18 : 2, width: 12, height: 12, borderRadius: "50%", background: active.includes(cat.id) ? "#020818" : cat.color, transition: "left 0.2s" }} />
-                  </div>
-                  <div style={{ color: cat.color, fontSize: 12, letterSpacing: 1 }}>{cat.label}</div>
-                </div>
-              ))}
-              <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 12 }}>
-                <div onClick={() => { setActive([]); setSelectedCodes([]); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
-              </div>
-            </div>
-            {/* Country Code Key */}
-            <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "16px", backdropFilter: "blur(10px)" }}>
-              <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 12 }}>COUNTRY CODES</div>
-              <div style={{ maxHeight: 280, overflowY: "auto", paddingRight: 4 }}>
-              {active.map(catId => {
-                const cat = CATEGORIES.find(c => c.id === catId);
-                const codes = catId === "rest_of_world"
-                  ? [...new Set(satsRef.current.filter(s => s.category === "rest_of_world" && s.country_code).map(s => s.country_code))].sort()
-                  : (CATEGORY_CODES[catId] || []);
-                if (!cat) return null;
-                return (
-                  <div key={catId} style={{ marginBottom: 12 }}>
-                    <div style={{ color: cat.color, fontSize: 10, letterSpacing: 1, marginBottom: 5 }}>{cat.label.toUpperCase()}</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
-                      {codes.map(code => {
-                        const isSelected = selectedCodes.includes(code);
-                        const isDimmed = codes.filter(c => selectedCodes.includes(c)).length > 0 && !isSelected;
-                        return (
-                          <span key={code} onClick={() => {
-                              setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
-                              const isPlain = !code.startsWith("Name:") && !code.startsWith("Type:") && code !== "All other codes";
-                              if (isPlain) {
-                                const exists = focusedCodes.findIndex(f => f.code === code);
-                                if (exists >= 0) {
-                                  const next = focusedCodes.filter((_, i) => i !== exists);
-                                  setFocusedCodes(next);
-                                  setFocusedIndex(Math.max(0, exists < focusedIndex ? focusedIndex - 1 : Math.min(focusedIndex, next.length - 1)));
-                                } else {
-                                  setFocusedCodes(prev => [...prev, { code, catId }]);
-                                  setFocusedIndex(focusedCodes.length);
-                                }
-                              }
-                            }}
-                            style={{ background: isSelected ? `${cat.color}44` : `${cat.color}18`, border: `1px solid ${isSelected ? cat.color : `${cat.color}44`}`, borderRadius: 3, color: isSelected ? cat.color : `${cat.color}cc`, fontSize: 9, padding: "2px 5px", letterSpacing: 1, cursor: "pointer", opacity: isDimmed ? 0.35 : 1, transition: "opacity 0.15s, background 0.15s" }}>
-                            {code}
-                          </span>
-                        );
-                      })}
+          {/* Left panel — filter (top 70%) + country codes (bottom 30%) */}
+          <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, left: 20, width: 300, height: "calc(100vh - 100px)", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+            {/* Top 70% — Filter Objects */}
+            <div style={{ flex: 7, minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 14px 0" }}>
+              <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16, flexShrink: 0 }}>FILTER OBJECTS</div>
+              <div style={{ flex: 1, overflowY: "auto", paddingBottom: 6 }}>
+                {CATEGORIES.map(cat => (
+                  <div key={cat.id} onClick={() => toggleCategory(cat.id)} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: "pointer", opacity: active.length === 0 || active.includes(cat.id) ? 1 : 0.4, transition: "opacity 0.2s" }}>
+                    <div style={{ width: 36, height: 18, borderRadius: 9, background: active.includes(cat.id) ? cat.color : "#1a1a2e", border: `1px solid ${cat.color}`, transition: "background 0.2s", position: "relative" }}>
+                      <div style={{ position: "absolute", top: 2, left: active.includes(cat.id) ? 18 : 2, width: 12, height: 12, borderRadius: "50%", background: active.includes(cat.id) ? "#020818" : cat.color, transition: "left 0.2s" }} />
                     </div>
+                    <div style={{ color: cat.color, fontSize: 12, letterSpacing: 1 }}>{cat.label}</div>
                   </div>
-                );
-              })}
-              {selectedCodes.length > 0 && (
-                <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 10 }}>
-                  <div onClick={() => setSelectedCodes([])} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET CODE FILTER</div>
+                ))}
+                <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 12 }}>
+                  <div onClick={() => { setActive([]); setSelectedCodes([]); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
                 </div>
-              )}
               </div>
             </div>
+
+            {/* Bottom 30% — Country Codes */}
+            <div style={{ flex: 3, minHeight: 0, borderTop: "1px solid #00d4ff22", display: "flex", flexDirection: "column", padding: "16px 14px" }}>
+              <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 12, flexShrink: 0 }}>COUNTRY CODES</div>
+              <div style={{ flex: 1, overflowY: "auto", paddingRight: 4 }}>
+                {active.map(catId => {
+                  const cat = CATEGORIES.find(c => c.id === catId);
+                  const codes = catId === "rest_of_world"
+                    ? [...new Set(satsRef.current.filter(s => s.category === "rest_of_world" && s.country_code).map(s => s.country_code))].sort()
+                    : (CATEGORY_CODES[catId] || []);
+                  if (!cat) return null;
+                  return (
+                    <div key={catId} style={{ marginBottom: 12 }}>
+                      <div style={{ color: cat.color, fontSize: 10, letterSpacing: 1, marginBottom: 5 }}>{cat.label.toUpperCase()}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                        {codes.map(code => {
+                          const isSelected = selectedCodes.includes(code);
+                          const isDimmed = codes.filter(c => selectedCodes.includes(c)).length > 0 && !isSelected;
+                          return (
+                            <span key={code} onClick={() => {
+                                setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
+                                const isPlain = !code.startsWith("Name:") && !code.startsWith("Type:") && code !== "All other codes";
+                                if (isPlain) {
+                                  const exists = focusedCodes.findIndex(f => f.code === code);
+                                  if (exists >= 0) {
+                                    const next = focusedCodes.filter((_, i) => i !== exists);
+                                    setFocusedCodes(next);
+                                    setFocusedIndex(Math.max(0, exists < focusedIndex ? focusedIndex - 1 : Math.min(focusedIndex, next.length - 1)));
+                                  } else {
+                                    setFocusedCodes(prev => [...prev, { code, catId }]);
+                                    setFocusedIndex(focusedCodes.length);
+                                  }
+                                }
+                              }}
+                              style={{ background: isSelected ? `${cat.color}44` : `${cat.color}18`, border: `1px solid ${isSelected ? cat.color : `${cat.color}44`}`, borderRadius: 3, color: isSelected ? cat.color : `${cat.color}cc`, fontSize: 9, padding: "2px 5px", letterSpacing: 1, cursor: "pointer", opacity: isDimmed ? 0.35 : 1, transition: "opacity 0.15s, background 0.15s" }}>
+                              {code}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {selectedCodes.length > 0 && (
+                  <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 10 }}>
+                    <div onClick={() => setSelectedCodes([])} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET CODE FILTER</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
           </div>
 
-          {/* Country satellite list panel */}
-          {focusedCodes.length > 0 && (() => {
-            const current = focusedCodes[focusedIndex] || focusedCodes[0];
-            const cat = CATEGORIES.find(c => c.id === current.catId);
+          {/* Right panel — satellite viewer (top 70%) + object data (bottom 30%) */}
+          {(() => {
+            const hasFocused = focusedCodes.length > 0;
+            const current = hasFocused ? (focusedCodes[focusedIndex] || focusedCodes[0]) : null;
+            const cat = current ? CATEGORIES.find(c => c.id === current.catId) : null;
             const accentColor = cat?.color || "#00d4ff";
-            const listSats = satsRef.current
-              .filter(s => s.country_code === current.code)
-              .sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1);
-            const fullName = COUNTRY_NAMES[current.code] || current.code;
+            const listSats = current
+              ? satsRef.current.filter(s => s.country_code === current.code).sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1)
+              : [];
+            const fullName = current ? (COUNTRY_NAMES[current.code] || current.code) : "";
             const total = focusedCodes.length;
-            const btnStyle = (enabled) => ({ color: enabled ? accentColor : `${accentColor}33`, cursor: enabled ? "pointer" : "default", fontSize: 18, padding: "0 6px", userSelect: "none", lineHeight: 1 });
+            const navBtn = (enabled) => ({ color: enabled ? accentColor : `${accentColor}22`, cursor: enabled ? "pointer" : "default", fontSize: 20, padding: "0 3px", userSelect: "none", lineHeight: 1 });
             return (
-              <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, right: 20, width: 300, background: "#020818cc", border: `1px solid ${accentColor}33`, borderRadius: 8, padding: "18px", backdropFilter: "blur(10px)", maxHeight: "calc(100vh - 330px)", display: "flex", flexDirection: "column" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexShrink: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-                    <span onClick={() => total > 1 && setFocusedIndex((focusedIndex - 1 + total) % total)} style={btnStyle(total > 1)}>‹</span>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ color: accentColor, fontSize: 16, fontWeight: "bold", letterSpacing: 2 }}>{current.code}</div>
-                      <div style={{ color: "#ffffff", fontSize: 14, marginTop: 3, letterSpacing: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fullName}</div>
-                    </div>
-                    <span onClick={() => total > 1 && setFocusedIndex((focusedIndex + 1) % total)} style={btnStyle(total > 1)}>›</span>
+              <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, right: 20, width: 300, height: "calc(100vh - 100px)", background: "#020818cc", border: `1px solid ${accentColor}33`, borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+                {/* ── Top 70% — satellite list ── */}
+                <div style={{ flex: 7, minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 14px 0" }}>
+                  {/* Header */}
+                  <div style={{ flexShrink: 0, marginBottom: 8 }}>
+                    {hasFocused ? (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}>
+                          <span onClick={() => total > 1 && setFocusedIndex((focusedIndex - 1 + total) % total)} style={navBtn(total > 1)}>‹</span>
+                          <div style={{ minWidth: 0, marginLeft: 2 }}>
+                            <div style={{ color: accentColor, fontSize: 14, fontWeight: "bold", letterSpacing: 2 }}>{current.code}</div>
+                            <div style={{ color: "#ffffff", fontSize: 12, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fullName}</div>
+                          </div>
+                          <span onClick={() => total > 1 && setFocusedIndex((focusedIndex + 1) % total)} style={navBtn(total > 1)}>›</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                          {total > 1 && <span style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 1 }}>{focusedIndex + 1}/{total}</span>}
+                          <span onClick={() => { setFocusedCodes([]); setFocusedIndex(0); }} style={{ color: "#00d4ff44", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>SATELLITE VIEWER</div>
+                    )}
+                    {hasFocused && <div style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 2, marginTop: 6 }}>{listSats.length} OBJECTS</div>}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, paddingLeft: 8 }}>
-                    {total > 1 && <span style={{ color: `${accentColor}66`, fontSize: 11, letterSpacing: 1 }}>{focusedIndex + 1}/{total}</span>}
-                    <div onClick={() => { setFocusedCodes([]); setFocusedIndex(0); }} style={{ color: "#00d4ff88", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>×</div>
+                  {/* Scrollable list */}
+                  <div style={{ flex: 1, overflowY: "auto", paddingBottom: 6 }}>
+                    {hasFocused ? listSats.map(sat => {
+                      const isActive = selected && sat.norad_cat_id === selected.norad_cat_id;
+                      return (
+                        <div key={sat.norad_cat_id}
+                          onClick={() => setSelected(prev => prev?.norad_cat_id === sat.norad_cat_id ? null : sat)}
+                          onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = `${accentColor}11`; }}
+                          onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 4px", borderBottom: `1px solid ${accentColor}0d`, cursor: "pointer", borderRadius: 3, background: isActive ? `${accentColor}22` : "transparent" }}>
+                          <div style={{ color: isActive ? accentColor : "#dddddd", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, paddingRight: 8 }}>{sat.object_name || "UNKNOWN"}</div>
+                          <div style={{ color: `${accentColor}77`, fontSize: 11, flexShrink: 0 }}>{sat.launch_date ? sat.launch_date.substring(0, 4) : "—"}</div>
+                        </div>
+                      );
+                    }) : (
+                      <div style={{ color: "#00d4ff22", fontSize: 12, textAlign: "center", paddingTop: 28, letterSpacing: 0.5, lineHeight: 1.7 }}>Select a country code chip<br/>to browse its satellites</div>
+                    )}
                   </div>
                 </div>
-                <div style={{ color: `${accentColor}88`, fontSize: 11, letterSpacing: 2, marginBottom: 12, flexShrink: 0 }}>{listSats.length} OBJECTS</div>
-                <div style={{ overflowY: "auto", flex: 1 }}>
-                  {listSats.map(sat => (
-                    <div key={sat.norad_cat_id}
-                      onClick={() => setSelected(sat)}
-                      onMouseEnter={e => e.currentTarget.style.background = `${accentColor}11`}
-                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 6px", borderBottom: `1px solid ${accentColor}11`, cursor: "pointer", borderRadius: 3 }}>
-                      <div style={{ color: "#dddddd", fontSize: 13, letterSpacing: 0.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, paddingRight: 10 }}>{sat.object_name || "UNKNOWN"}</div>
-                      <div style={{ color: `${accentColor}88`, fontSize: 12, flexShrink: 0 }}>{sat.launch_date ? sat.launch_date.substring(0, 4) : "—"}</div>
-                    </div>
-                  ))}
+
+                {/* ── Bottom 30% — object data ── */}
+                <div style={{ flex: 3, minHeight: 0, borderTop: `1px solid ${accentColor}22`, overflowY: "auto", padding: "16px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexShrink: 0 }}>
+                    <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>OBJECT DATA</div>
+                    {selected && <span onClick={() => setSelected(null)} style={{ color: "#00d4ff44", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</span>}
+                  </div>
+                  {selected ? (
+                    [["NAME", selected.object_name], ["TYPE", selected.object_type], ["COUNTRY", selected.country_code],
+                     ["LAUNCHED", selected.launch_date], ["INCLINATION", selected.inclination ? `${selected.inclination}°` : "N/A"],
+                     ["APOAPSIS", selected.apoapsis ? `${Math.round(selected.apoapsis)} km` : "N/A"],
+                     ["PERIAPSIS", selected.periapsis ? `${Math.round(selected.periapsis)} km` : "N/A"],
+                     ["PERIOD", selected.period ? `${Math.round(selected.period)} min` : "N/A"],
+                    ].map(([label, value]) => (
+                      <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 11 }}>
+                        <div style={{ color: "#00d4ff66", fontSize: 11, letterSpacing: 1, flexShrink: 0 }}>{label}</div>
+                        <div style={{ color: "#ffffff", fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value || "N/A"}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ color: "#00d4ff22", fontSize: 12, letterSpacing: 0.5 }}>Click any satellite for details</div>
+                  )}
                 </div>
+
               </div>
             );
           })()}
-
-          {/* Selected satellite panel */}
-          {selected && (
-            <div style={{ position: "absolute", top: "50%", right: focusedCodes.length > 0 ? 340 : 20, transform: "translateY(-50%)", transition: "right 0.2s", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: 24, backdropFilter: "blur(10px)", minWidth: 260, maxWidth: 300 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>OBJECT DATA</div>
-                <div onClick={() => setSelected(null)} style={{ color: "#00d4ff88", cursor: "pointer", fontSize: 18 }}>×</div>
-              </div>
-              {[
-                ["NAME", selected.object_name], ["TYPE", selected.object_type], ["COUNTRY", selected.country_code],
-                ["LAUNCHED", selected.launch_date], ["INCLINATION", selected.inclination ? `${selected.inclination}°` : "N/A"],
-                ["APOAPSIS", selected.apoapsis ? `${Math.round(selected.apoapsis)} km` : "N/A"],
-                ["PERIAPSIS", selected.periapsis ? `${Math.round(selected.periapsis)} km` : "N/A"],
-                ["PERIOD", selected.period ? `${Math.round(selected.period)} min` : "N/A"],
-              ].map(([label, value]) => (
-                <div key={label} style={{ marginBottom: 10 }}>
-                  <div style={{ color: "#00d4ff88", fontSize: 10, letterSpacing: 2 }}>{label}</div>
-                  <div style={{ color: "#ffffff", fontSize: 13, marginTop: 2 }}>{value || "N/A"}</div>
-                </div>
-              ))}
-            </div>
-          )}
 
           {/* Bottom center — Timeline + Speed side by side */}
           <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 10, alignItems: "stretch" }}>
@@ -1268,36 +1293,35 @@ export default function App() {
                 {timeScale === 0 ? "PAUSED" : timeScale === 1 ? "REAL TIME" : `${timeScale}×`}
               </div>
             </div>
-          </div>
 
-          {/* ISS Tracker Panel */}
-          <div style={{ position: "absolute", bottom: 24, right: 24, background: "#020818dd", border: "1px solid #FFD70044", borderRadius: 8, padding: "18px 22px", backdropFilter: "blur(10px)", minWidth: 230 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#FFD700", boxShadow: "0 0 8px #FFD700" }} />
-              <div style={{ color: "#FFD700", fontSize: 11, fontWeight: "bold", letterSpacing: 3 }}>ISS TRACKER</div>
-            </div>
-            <div style={{ color: "#FFD70055", fontSize: 10, letterSpacing: 2, marginBottom: 14 }}>INTERNATIONAL SPACE STATION</div>
-            {timelineYear !== null && timelineYear < 1998 ? (
-              <div style={{ color: "#FFD70044", fontSize: 11, letterSpacing: 1 }}>NOT YET LAUNCHED<br/><span style={{ fontSize: 9, letterSpacing: 2 }}>ZARYA MODULE: NOV 1998</span></div>
-            ) : issData ? (
-              <>
-                {[
-                  ["ALTITUDE",  `${Number(issData.altitude).toFixed(1)} km`],
-                  ["VELOCITY",  `${Number(issData.velocity).toFixed(2)} km/s`],
-                  ["LATITUDE",  `${Number(issData.latitude).toFixed(4)}°`],
-                  ["LONGITUDE", `${Number(issData.longitude).toFixed(4)}°`],
-                  ["STATUS",    issData.visibility === "daylight" ? "DAYLIGHT" : "ECLIPSE"],
+            {/* ISS Tracker */}
+            <div style={{ background: "#020818cc", border: "1px solid #FFD70033", borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", minWidth: 260 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#FFD700", boxShadow: "0 0 6px #FFD700", flexShrink: 0 }} />
+                <div style={{ color: "#FFD700", fontSize: 10, letterSpacing: 3 }}>ISS LIVE</div>
+              </div>
+              {timelineYear !== null && timelineYear < 1998 ? (
+                <div style={{ color: "#FFD70044", fontSize: 10, letterSpacing: 1 }}>NOT YET LAUNCHED<br/><span style={{ fontSize: 9, letterSpacing: 1 }}>ZARYA: NOV 1998</span></div>
+              ) : issData ? (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "5px 8px" }}>
+                {[["ALT",    `${Number(issData.altitude).toFixed(1)} km`],
+                  ["VEL",    `${Number(issData.velocity).toFixed(2)} km/s`],
+                  ["STATUS", issData.visibility === "daylight" ? "DAYLIGHT" : "ECLIPSE"],
+                  ["LAT",    `${Number(issData.latitude).toFixed(4)}°`],
+                  ["LON",    `${Number(issData.longitude).toFixed(4)}°`],
                 ].map(([label, value]) => (
-                  <div key={label} style={{ marginBottom: 9 }}>
-                    <div style={{ color: "#FFD70066", fontSize: 10, letterSpacing: 2 }}>{label}</div>
-                    <div style={{ color: "#FFD700", fontSize: 13, marginTop: 2 }}>{value}</div>
+                  <div key={label}>
+                    <div style={{ color: "#FFD70066", fontSize: 9, letterSpacing: 2 }}>{label}</div>
+                    <div style={{ color: "#FFD700", fontSize: 11 }}>{value}</div>
                   </div>
                 ))}
-              </>
-            ) : (
-              <div style={{ color: "#FFD70066", fontSize: 11, letterSpacing: 1 }}>ACQUIRING SIGNAL...</div>
-            )}
+                </div>
+              ) : (
+                <div style={{ color: "#FFD70066", fontSize: 11, letterSpacing: 1 }}>ACQUIRING SIGNAL...</div>
+              )}
+            </div>
           </div>
+
         </>
       )}
 
