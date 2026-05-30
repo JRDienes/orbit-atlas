@@ -2,8 +2,8 @@ name: Weekly Satellite Update
 
 on:
   schedule:
-    - cron: '0 18 * * 1'  # Every Monday at 6pm UTC
-  workflow_dispatch:  # Also lets you run it manually on GitHub
+    - cron: '0 3 * * 0'  # Every Saturday 11pm ET (Sunday 3am UTC)
+  workflow_dispatch:
 
 jobs:
   update:
@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: pip install requests python-dotenv supabase
 
-      - name: Run pipeline
+      - name: Fetch from Space-Track → Supabase
         env:
           SPACETRACK_USER: ${{ secrets.SPACETRACK_USER }}
           SPACETRACK_PASS: ${{ secrets.SPACETRACK_PASS }}

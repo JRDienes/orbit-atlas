@@ -13,6 +13,8 @@
 
 **[orbit-atlas.vercel.app](https://orbit-atlas.vercel.app)**
 
+Follow weekly launch updates: **[@OrbitAtlasX](https://x.com/OrbitAtlasX)** on X
+
 ---
 
 ## 📡 What It Does
@@ -99,6 +101,17 @@ Space-Track.org API (U.S. Space Force)
 - [x] Ground track projection — shows where ISS is heading
 - [x] Dedicated always-visible panel: altitude, velocity, lat/lon, daylight/eclipse status
 
+### X Bot (`x_bot/`)
+- [x] Automated weekly post to [@OrbitAtlasX](https://x.com/OrbitAtlasX) every Sunday at 10am ET via GitHub Actions
+- [x] Queries Supabase for the previous week's payload launches (7-day lagged window for full Space-Track catalog coverage)
+- [x] Groups by constellation (Starlink, Kuiper, Qianfan, OneWeb, etc.) sorted by launch count
+- [x] Shows cumulative DB totals for large constellations (>100 sats), e.g. `↑10,424`
+- [x] Expands one-off satellites to their real names when tweet is short enough; collapses to country flags otherwise
+- [x] Adaptive threading — single tweet or thread depending on 240-char limit
+- [x] First Sunday of each month also posts a full monthly summary for the previous calendar month
+- [x] Separate Saturday 11pm ET fetch cron and Sunday 10am ET post cron — gap allows manual data review before posting
+- [x] `workflow_dispatch` on both workflows for manual trigger from GitHub Actions UI
+
 ---
 
 ## 🚧 Roadmap
@@ -152,6 +165,22 @@ Space-Track.org API (U.S. Space Force)
 - [ ] OneWeb constellation
 - [ ] Watch each constellation grow in real time as launches occur
 - [ ] Constellation coverage map — show ground coverage footprint
+- [ ] Distinguish Starlink generations (Gen 1, Gen 2, Gen 3) by name pattern and visualize separately
+- [ ] Inversion Space pod watch — track on-orbit storage/deorbit vehicles as a dedicated category
+
+### 📊 Weekly / Monthly Launch View
+- [ ] In-app weekly and monthly launch summary panel mirroring the X bot data
+- [ ] Visualize new launches on the globe highlighted by week or month
+- [ ] Shareable launch recap view used as source for X post screenshots
+
+### 🤖 AI / Chat Features
+- [ ] Integrate Ollama (local LLM) or Claude API for on-site satellite chat assistant
+- [ ] Ask questions about any satellite, constellation, or orbital regime
+- [ ] AI-generated launch summaries to complement the automated X posts
+
+### 📸 X Bot Enhancements
+- [ ] Automated screenshot of the weekly launch view and attach as image to X post
+- [ ] Richer post formatting with launch highlights or notable missions
 
 ### 🪐 Solar System Mode
 - [ ] Expand view beyond Earth orbit to show full solar system

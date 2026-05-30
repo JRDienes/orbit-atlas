@@ -1,0 +1,30 @@
+name: Weekly X Post
+
+on:
+  schedule:
+    - cron: '0 14 * * 0'  # Every Sunday 10am ET (2pm UTC) — after reviewing Saturday's fetch
+  workflow_dispatch:
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv tweepy
+
+      - name: Post to X
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+        run: python x_bot/bot.py
