@@ -1,5 +1,4 @@
 /* eslint-disable no-restricted-globals */
-import * as satellite from "satellite.js";
 
 // Duplicated from App.js — workers are isolated bundles with no shared scope
 const CATEGORIES = [
@@ -49,13 +48,6 @@ function altToRadius(altKm) {
   return 1.05 + Math.log(1 + Math.min(Math.max(200, altKm), 42000) / 6371);
 }
 
-function latLonToXYZ(latDeg, lonDeg, altKm) {
-  const lat = (latDeg * Math.PI) / 180;
-  const lon = (lonDeg * Math.PI) / 180;
-  const r = altToRadius(altKm);
-  return [r * Math.cos(lat) * Math.cos(lon), r * Math.sin(lat), r * Math.cos(lat) * Math.sin(lon)];
-}
-
 // Workers have no DOM — parse hex color manually instead of using THREE.Color
 function hexToRgb(hex) {
   return [
@@ -66,58 +58,35 @@ function hexToRgb(hex) {
 }
 
 self.onmessage = function ({ data: { sats } }) {
-  const now = new Date();
-  const gmst = satellite.gstime(now);
-
   const positions = [];
   const colors = [];
   const satObjects = [];
 
   sats.forEach(sat => {
-    let x, y, z, lon;
-    let usedTLE = false;
+    if (!sat.inclination || !sat.apoapsis) return;
 
-    if (sat.tle_line1 && sat.tle_line2) {
-      try {
-        const satrec = satellite.twoline2satrec(sat.tle_line1.trim(), sat.tle_line2.trim());
-        const pv = satellite.propagate(satrec, now);
-        if (pv?.position && !isNaN(pv.position.x)) {
-          const geo = satellite.eciToGeodetic(pv.position, gmst);
-          const latDeg = satellite.degreesLat(geo.latitude);
-          const lonDeg = satellite.degreesLong(geo.longitude);
-          [x, y, z] = latLonToXYZ(latDeg, lonDeg, geo.height);
-          lon = (lonDeg * Math.PI) / 180;
-          usedTLE = true;
-        }
-      } catch (e) { /* fall through */ }
-    }
-
-    if (x === undefined) {
-      if (!sat.inclination || !sat.apoapsis) return;
-      const inc = (sat.inclination * Math.PI) / 180;
-      const alt = altToRadius(sat.apoapsis);
-      lon = Math.random() * Math.PI * 2;
-      const lat = (Math.random() - 0.5) * inc * 2;
-      x = alt * Math.cos(lat) * Math.cos(lon);
-      y = alt * Math.sin(lat);
-      z = alt * Math.cos(lat) * Math.sin(lon);
-    }
-
-    const inc0 = sat.inclination ? (sat.inclination * Math.PI) / 180 : 0;
-    const sinI = Math.sin(inc0), cosI = Math.cos(inc0);
-    const sinR = Math.sin(lon),  cosR = Math.cos(lon);
-    const rApo  = altToRadius(sat.apoapsis  ?? 400);
-    const rPeri = altToRadius(sat.periapsis ?? sat.apoapsis ?? 400);
+    // Place the satellite directly on its orbit ellipse, using independent random
+    // RAAN (plane orientation) and phase. This is the SAME transform the render
+    // loop and orbit-ring drawing use, so dots sit on a uniform shell — no
+    // back-solving, no latitude bias, no clumping toward one hemisphere.
+    const inc  = (sat.inclination * Math.PI) / 180;
+    const raan = Math.random() * Math.PI * 2; // ascending node longitude
+    const theta = Math.random() * Math.PI * 2; // starting phase along the orbit
+    const sinI = Math.sin(inc), cosI = Math.cos(inc);
+    const sinR = Math.sin(raan), cosR = Math.cos(raan);
+    const rApo  = altToRadius(sat.apoapsis);
+    const rPeri = altToRadius(sat.periapsis ?? sat.apoapsis);
     const a = (rApo + rPeri) / 2;
     const c = (rApo - rPeri) / 2;
     const b = Math.sqrt(Math.max(0, a * a - c * c));
-    const xOrb = x * cosR + z * sinR;
-    const zeq  = -x * sinR + z * cosR;
-    const zOrb = Math.abs(sinI) > 0.1 ? y / sinI : zeq / (cosI || 1);
-    const theta = Math.atan2(zOrb / (b || 1), (xOrb + c) / (a || 1));
-    const angularSpeed = (usedTLE && sat.period > 0)
-      ? (2 * Math.PI) / (sat.period * 60 * 1000)
-      : 0;
+    const xOrb = a * Math.cos(theta) - c;
+    const zOrb = b * Math.sin(theta);
+    const x = xOrb * cosR - zOrb * cosI * sinR;
+    const y = zOrb * sinI;
+    const z = xOrb * sinR + zOrb * cosI * cosR;
+    const lon = raan; // stored as RAAN so orbit rings match the dot positions
+    // Orbital animation speed comes from the period column, independent of TLE.
+    const angularSpeed = sat.period > 0 ? (2 * Math.PI) / (sat.period * 60 * 1000) : 0;
 
     const cat = categorize(sat);
     const [cr, cg, cb] = hexToRgb(CATEGORIES.find(c => c.id === cat)?.color || "#ffffff");
@@ -125,7 +94,6 @@ self.onmessage = function ({ data: { sats } }) {
     positions.push(x, y, z);
     colors.push(cr, cg, cb);
 
-    // Omit tle_line1/tle_line2 — not needed after propagation
     satObjects.push({
       norad_cat_id: sat.norad_cat_id,
       object_name:  sat.object_name,

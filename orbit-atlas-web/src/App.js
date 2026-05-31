@@ -10,6 +10,7 @@ import { altToRadius, latLonToXYZ } from "./utils/geo";
 import LoadingOverlay from "./components/LoadingOverlay";
 import WelcomeBanner from "./components/WelcomeBanner";
 import Header from "./components/Header";
+import About from "./components/About";
 import TimelineControl from "./components/TimelineControl";
 import SpeedControl from "./components/SpeedControl";
 import ISSPanel from "./components/ISSPanel";
@@ -48,6 +49,7 @@ export default function App() {
   const [issData, setIssData] = useState(null);
   const [issEnabled, setIssEnabled] = useState(true);
   const [issHover, setIssHover] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const satsRef = useRef([]);
   const pointsRef = useRef([]);
   const sceneRef = useRef(null);
@@ -507,7 +509,9 @@ export default function App() {
     // Load satellites from Supabase
     async function loadSats() {
       const pageSize = 1000;
-      const COLS = "norad_cat_id, object_name, object_type, country_code, inclination, apoapsis, periapsis, period, launch_date, tle_line1, tle_line2";
+      // TLE lines omitted on purpose — they were ~70% of the payload. Positions are
+      // placed via Keplerian elements in the worker; the ISS fetches its own TLE.
+      const COLS = "norad_cat_id, object_name, object_type, country_code, inclination, apoapsis, periapsis, period, launch_date";
 
       // Ask Supabase for the total row count using head:true — sends no rows,
       // just reads the Content-Range header which contains the total count.
@@ -1066,7 +1070,10 @@ export default function App() {
       {showWelcome && <WelcomeBanner isMobile={isMobile} visible={welcomeVisible && !welcomeExiting} />}
 
       {/* Header */}
-      <Header isMobile={isMobile} loading={loading} visibleCount={visibleCount} />
+      <Header isMobile={isMobile} loading={loading} visibleCount={visibleCount} onMenuClick={() => setAboutOpen(true)} />
+
+      {/* About panel */}
+      <About open={aboutOpen} onClose={() => setAboutOpen(false)} />
 
       {/* ── DESKTOP LAYOUT ── */}
       {!isMobile && (
