@@ -4,142 +4,24 @@ import * as satellite from "satellite.js";
 import { createClient } from "@supabase/supabase-js";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
+import { CATEGORIES, CATEGORY_CODES } from "./utils/constants";
+import { COLORS as C, FONT } from "./theme";
+import { altToRadius, latLonToXYZ } from "./utils/geo";
+import LoadingOverlay from "./components/LoadingOverlay";
+import WelcomeBanner from "./components/WelcomeBanner";
+import Header from "./components/Header";
+import TimelineControl from "./components/TimelineControl";
+import SpeedControl from "./components/SpeedControl";
+import ISSPanel from "./components/ISSPanel";
+import FilterPanel from "./components/FilterPanel";
+import CountryCodesPanel from "./components/CountryCodesPanel";
+import SatelliteViewer from "./components/SatelliteViewer";
+import MobileObjectData from "./components/MobileObjectData";
 
 const supabase = createClient(
   process.env.REACT_APP_SUPABASE_URL,
   process.env.REACT_APP_SUPABASE_KEY
 );
-
-export const CATEGORIES = [
-  { id: "starlink",       label: "SpaceX / Starlink",   color: "#00D4FF" }, // SpaceX cyan
-  { id: "kuiper",         label: "Amazon Kuiper",       color: "#FF9900" }, // Amazon orange
-  { id: "ast_spacemobile", label: "AST SpaceMobile",   color: "#CC44FF" }, // AST purple
-  { id: "us",            label: "United States",      color: "#4488FF" }, // US flag blue
-  { id: "uk",            label: "United Kingdom",     color: "#FF2244" }, // Union Jack red
-  { id: "europe",        label: "Europe / ESA",       color: "#FFEE00" }, // EU flag gold
-  { id: "russia",        label: "Russia",             color: "#FF3333" }, // Russia red
-  { id: "china",         label: "China",              color: "#DD0000" }, // China flag red
-  { id: "japan",         label: "Japan",              color: "#FF66AA" }, // Cherry blossom
-  { id: "india",         label: "India",              color: "#FF7700" }, // India saffron
-  { id: "middle_east",   label: "Middle East",        color: "#FFB700" }, // Gulf gold
-  { id: "asia_pacific",  label: "Asia Pacific",       color: "#00DDAA" }, // Pacific teal
-  { id: "rest_of_world", label: "Rest of World",      color: "#AAAAAA" }, // Neutral grey
-  { id: "debris",        label: "Debris",             color: "#FF5500" }, // Warning orange
-  { id: "rocket_body",   label: "Rocket Bodies",      color: "#778899" }, // Slate
-];
-
-const CATEGORY_CODES = {
-  starlink:       ["Name: STARLINK"],
-  kuiper:         ["Name: KUIPER"],
-  ast_spacemobile: ["Name: BLUEBIRD", "Name: SPACEMOBILE"],
-  us:            ["US", "CA", "AUS", "NZ", "GLOB", "ORB", "O3B", "ITSO"],
-  uk:            ["UK", "IM"],
-  europe:        ["FR", "GER", "IT", "SPN", "NOR", "SWED", "BEL", "NETH", "SWTZ", "DEN",
-                  "FIN", "POR", "POL", "CZE", "CZCH", "HUN", "ROM", "EST", "LTU", "HRV",
-                  "SVN", "FGER", "GREC", "LUXE", "TURK", "ESA", "EUME", "EUTE", "SES", "FRIT"],
-  russia:        ["CIS", "RUS", "SU", "USSR", "BELA", "KAZ", "UKR", "AZER", "SEAL", "TMMC", "STCT"],
-  china:         ["PRC", "CHBZ", "CHLE", "NICO", "ABS", "PAKI", "LAOS", "NKOR"],
-  japan:         ["JPN"],
-  india:         ["IND"],
-  middle_east:   ["SAUD", "UAE", "QAT", "KWT", "BHR", "JOR", "IRAN", "IRAQ", "AB"],
-  asia_pacific:  ["SKOR", "INDO", "MALA", "THAI", "SING", "BGD", "TWN", "ASRA", "RP"],
-  rest_of_world: ["All other codes"],
-  debris:        ["Type: DEBRIS"],
-  rocket_body:   ["Type: ROCKET BODY"],
-};
-
-const COUNTRY_NAMES = {
-  US: "United States", CA: "Canada", AUS: "Australia", NZ: "New Zealand",
-  GLOB: "Global / Intelsat", ORB: "Orbcomm", O3B: "O3B Networks", ITSO: "ITSO",
-  UK: "United Kingdom", IM: "Isle of Man",
-  FR: "France", GER: "Germany", IT: "Italy", SPN: "Spain", NOR: "Norway",
-  SWED: "Sweden", BEL: "Belgium", NETH: "Netherlands", SWTZ: "Switzerland",
-  DEN: "Denmark", FIN: "Finland", POR: "Portugal", POL: "Poland",
-  CZE: "Czech Republic", CZCH: "Czech Republic", HUN: "Hungary", ROM: "Romania",
-  EST: "Estonia", LTU: "Lithuania", HRV: "Croatia", SVN: "Slovenia",
-  FGER: "West Germany", GREC: "Greece", LUXE: "Luxembourg", TURK: "Turkey",
-  ESA: "European Space Agency", EUME: "EUMETSAT", EUTE: "Eutelsat",
-  SES: "SES S.A.", FRIT: "France / Italy",
-  CIS: "Russia / CIS", RUS: "Russia", SU: "Soviet Union", USSR: "Soviet Union",
-  BELA: "Belarus", KAZ: "Kazakhstan", UKR: "Ukraine", AZER: "Azerbaijan",
-  SEAL: "Sea Launch", TMMC: "Turkmencosmos", STCT: "Russia / Kazakhstan",
-  PRC: "China", CHBZ: "China / Brazil", CHLE: "China / Luxembourg",
-  NICO: "China / Nigeria", ABS: "Asia Broadcast Satellite",
-  PAKI: "Pakistan", LAOS: "Laos", NKOR: "North Korea",
-  JPN: "Japan", IND: "India",
-  SAUD: "Saudi Arabia", UAE: "United Arab Emirates", QAT: "Qatar",
-  KWT: "Kuwait", BHR: "Bahrain", JOR: "Jordan", IRAN: "Iran", IRAQ: "Iraq",
-  AB: "Arab Satellite Comms. Org.",
-  SKOR: "South Korea", INDO: "Indonesia", MALA: "Malaysia", THAI: "Thailand",
-  SING: "Singapore", BGD: "Bangladesh", TWN: "Taiwan", ASRA: "AsiaSat", RP: "Philippines",
-};
-
-function categorize(sat) {
-  const name = sat.object_name?.toUpperCase() || "";
-  const country = sat.country_code || "";
-  const type = sat.object_type?.toUpperCase() || "";
-
-  // Name-based constellations — exclusive, checked first
-  if (name.includes("STARLINK")) return "starlink";
-  if (name.includes("KUIPER")) return "kuiper";
-  if (name.includes("BLUEBIRD") || name.includes("SPACEMOBILE")) return "ast_spacemobile";
-
-  // Object type
-  if (type === "DEBRIS") return "debris";
-  if (type === "ROCKET BODY") return "rocket_body";
-
-  // United States, Five Eyes & US-operated
-  if (
-    ["US", "CA", "AUS", "NZ", "GLOB", "ORB", "O3B", "ITSO"].includes(country) ||
-    name.includes("NROL") || name.includes("NAVSTAR") || name.includes("MILSTAR") ||
-    name.includes("AEHF") || name.includes("WGS") || name.includes("USA ")
-  ) return "us";
-
-  // United Kingdom
-  if (["UK", "IM"].includes(country)) return "uk";
-
-  // Europe / ESA
-  if (["FR", "GER", "IT", "SPN", "NOR", "SWED", "BEL", "NETH", "SWTZ", "DEN",
-       "FIN", "POR", "POL", "CZE", "CZCH", "HUN", "ROM", "EST", "LTU", "HRV",
-       "SVN", "FGER", "GREC", "LUXE", "TURK",
-       "ESA", "EUME", "EUTE", "SES", "FRIT"].includes(country))
-    return "europe";
-
-  // Russia & sphere
-  if (["CIS", "RUS", "SU", "USSR", "BELA", "KAZ", "UKR", "AZER", "SEAL", "TMMC", "STCT"].includes(country))
-    return "russia";
-
-  // China & sphere
-  if (["PRC", "CHBZ", "CHLE", "NICO", "ABS", "PAKI", "LAOS", "NKOR"].includes(country))
-    return "china";
-
-  // Japan
-  if (country === "JPN") return "japan";
-
-  // India
-  if (country === "IND") return "india";
-
-  // Middle East
-  if (["SAUD", "UAE", "QAT", "KWT", "BHR", "JOR", "IRAN", "IRAQ", "AB"].includes(country))
-    return "middle_east";
-
-  // Asia Pacific
-  if (["SKOR", "INDO", "MALA", "THAI", "SING", "BGD", "TWN", "ASRA", "RP"].includes(country))
-    return "asia_pacific";
-
-  return "rest_of_world";
-}
-
-function altToRadius(altKm) {
-  return 1.05 + Math.log(1 + Math.min(Math.max(200, altKm), 42000) / 6371);
-}
-
-function latLonToXYZ(latDeg, lonDeg, altKm) {
-  const lat = (latDeg * Math.PI) / 180;
-  const lon = (lonDeg * Math.PI) / 180;
-  const r = altToRadius(altKm);
-  return [r * Math.cos(lat) * Math.cos(lon), r * Math.sin(lat), r * Math.cos(lat) * Math.sin(lon)];
-}
 
 const ISS_TRAIL_LEN = 18;
 const ISS_COLOR = new THREE.Color("#FFD700");
@@ -259,6 +141,25 @@ export default function App() {
     );
   }
 
+  // Toggle a country-code chip: flips it in selectedCodes, and for plain codes
+  // (not Name:/Type: sentinels) also adds/removes it from the focused drill-down
+  // list that drives the satellite viewer.
+  function toggleCode(code, catId) {
+    setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
+    const isPlain = !code.startsWith("Name:") && !code.startsWith("Type:") && code !== "All other codes";
+    if (isPlain) {
+      const exists = focusedCodes.findIndex(f => f.code === code);
+      if (exists >= 0) {
+        const next = focusedCodes.filter((_, i) => i !== exists);
+        setFocusedCodes(next);
+        setFocusedIndex(Math.max(0, exists < focusedIndex ? focusedIndex - 1 : Math.min(focusedIndex, next.length - 1)));
+      } else {
+        setFocusedCodes(prev => [...prev, { code, catId }]);
+        setFocusedIndex(focusedCodes.length);
+      }
+    }
+  }
+
   function stopTimelinePlay() {
     clearInterval(timelineIntervalRef.current);
     timelineIntervalRef.current = null;
@@ -295,6 +196,23 @@ export default function App() {
   function stepTimelineForward() {
     stopTimelinePlay();
     setTimelineYear(prev => prev === null ? null : (prev >= CURRENT_YEAR - 1 ? null : prev + 1));
+  }
+
+  // Toggle the ISS tracker. When enabling, queue a fly-to that spins the globe
+  // to center the ISS on screen (animation loop consumes flyToISSRef).
+  function toggleISS() {
+    const enabling = !issEnabled;
+    setIssEnabled(enabling);
+    if (enabling && issData) {
+      const lat = (Number(issData.latitude) * Math.PI) / 180;
+      const lon = (Number(issData.longitude) * Math.PI) / 180;
+      const r = altToRadius(Number(issData.altitude));
+      const xl = r * Math.cos(lat) * Math.cos(lon);
+      const zl = r * Math.cos(lat) * Math.sin(lon);
+      const yl = r * Math.sin(lat);
+      const d = Math.sqrt(xl * xl + zl * zl);
+      flyToISSRef.current = { tx: -Math.atan2(yl, d) * 0.4, ty: Math.atan2(-xl, zl) };
+    }
   }
 
   useEffect(() => {
@@ -1136,380 +1054,101 @@ export default function App() {
   }, [selected]);
 
   return (
-    <div style={{ background: "#020818", width: "100%", height: "100%", overflow: "hidden", position: "relative", fontFamily: "'Courier New', monospace" }}>
+    <div style={{ background: C.bg, width: "100%", height: "100%", overflow: "hidden", position: "relative", fontFamily: FONT }}>
       {/* Loading overlay */}
-      {showOverlay && (
-        <>
-          <style>{`
-            @keyframes orbit-spin {
-              from { transform: rotate(0deg); }
-              to   { transform: rotate(360deg); }
-            }
-            @keyframes pulse-ring {
-              0%   { transform: translate(-50%, -50%) scale(1);   opacity: 0.6; }
-              100% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
-            }
-            @keyframes dot-blink {
-              0%, 100% { opacity: 1; }
-              50%       { opacity: 0.2; }
-            }
-          `}</style>
-          <div style={{ position: "fixed", inset: 0, background: "#020818", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Courier New', monospace", opacity: overlayFading ? 0 : 1, transition: "opacity 0.9s ease", pointerEvents: overlayFading ? "none" : "all" }}>
-            <div style={{ color: "#00d4ff", fontSize: 32, fontWeight: "bold", letterSpacing: 8, marginBottom: 8 }}>ORBIT ATLAS</div>
-            <div style={{ color: "#00ff8866", fontSize: 12, letterSpacing: 3, marginBottom: 64 }}>SPACE OBJECT TRACKING SYSTEM</div>
-
-            {/* Animated rings */}
-            <div style={{ position: "relative", width: 90, height: 90, marginBottom: 48 }}>
-              <div style={{ position: "absolute", top: "50%", left: "50%", width: 44, height: 44, borderRadius: "50%", border: "1px solid #00d4ff55", animation: "pulse-ring 2s ease-out infinite" }} />
-              <div style={{ position: "absolute", top: "50%", left: "50%", width: 44, height: 44, borderRadius: "50%", border: "1px solid #00d4ff55", animation: "pulse-ring 2s ease-out infinite 0.75s" }} />
-              <div style={{ position: "absolute", top: "50%", left: "50%", width: 66, height: 66, marginTop: -33, marginLeft: -33, borderRadius: "50%", border: "2px solid transparent", borderTopColor: "#00d4ff", borderRightColor: "#00d4ff44", animation: "orbit-spin 1.1s linear infinite" }} />
-              <div style={{ position: "absolute", top: "50%", left: "50%", width: 10, height: 10, marginTop: -5, marginLeft: -5, borderRadius: "50%", background: "#00d4ff", boxShadow: "0 0 14px #00d4ff", animation: "dot-blink 1.5s ease-in-out infinite" }} />
-            </div>
-
-            <div style={{ color: "#00d4ff", fontSize: 13, letterSpacing: 3, marginBottom: 10 }}>LOADING OBJECTS...</div>
-            <div style={{ color: "#00d4ff44", fontSize: 11, letterSpacing: 2 }}>FETCHING SATELLITE DATA</div>
-          </div>
-        </>
-      )}
+      {showOverlay && <LoadingOverlay fading={overlayFading} />}
 
       {/* Globe */}
       <div ref={mountRef} style={{ position: "absolute", inset: 0, touchAction: "none" }} />
 
       {/* Welcome message — visible between loading screen and satellite fade-in */}
-      {showWelcome && (
-        <div style={{
-          position: "absolute", top: isMobile ? "15%" : "17%", left: "50%",
-          transform: "translateX(-50%)", textAlign: "center",
-          pointerEvents: "none", zIndex: 100,
-          opacity: welcomeVisible && !welcomeExiting ? 1 : 0,
-          transition: "opacity 0.4s ease",
-        }}>
-          <div style={{ color: "#00d4ff", fontSize: isMobile ? 16 : 22, fontWeight: "bold", letterSpacing: isMobile ? 3 : 6 }}>WELCOME TO ORBIT ATLAS</div>
-          <div style={{ color: "#00d4ff55", fontSize: isMobile ? 10 : 11, letterSpacing: 3, marginTop: 6 }}>INITIALIZING SATELLITE POSITIONS</div>
-        </div>
-      )}
+      {showWelcome && <WelcomeBanner isMobile={isMobile} visible={welcomeVisible && !welcomeExiting} />}
 
       {/* Header */}
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: isMobile ? "12px 16px" : "20px 30px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #00d4ff22", background: "linear-gradient(180deg, #020818 0%, transparent 100%)" }}>
-        <div onClick={() => window.location.reload()} style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12, cursor: "pointer" }} title="Refresh">
-          <img src={`${process.env.PUBLIC_URL}/orbit_atlas_logo.png`} alt="Orbit Atlas" style={{ height: isMobile ? 32 : 44, width: "auto", display: "block", maskImage: "radial-gradient(circle, black 55%, transparent 95%)", WebkitMaskImage: "radial-gradient(circle, black 55%, transparent 95%)" }} />
-          <div>
-            <div style={{ color: "#00d4ff", fontSize: isMobile ? 16 : 22, fontWeight: "bold", letterSpacing: isMobile ? 2 : 4 }}>ORBIT ATLAS</div>
-            {!isMobile && <div style={{ color: "#00ff8888", fontSize: 11, letterSpacing: 2 }}>SPACE OBJECT TRACKING SYSTEM</div>}
-          </div>
-        </div>
-        <div style={{ color: "#00d4ff88", fontSize: isMobile ? 10 : 12, letterSpacing: 2 }}>
-          {loading ? "LOADING..." : `${visibleCount.toLocaleString()} OBJECTS`}
-        </div>
-      </div>
+      <Header isMobile={isMobile} loading={loading} visibleCount={visibleCount} />
 
       {/* ── DESKTOP LAYOUT ── */}
       {!isMobile && (
         <>
           {/* Left panel — filter (top 70%) + country codes (bottom 30%) */}
-          <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, left: 20, width: 300, height: "calc(100vh - 100px)", background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, left: 20, width: 300, height: "calc(100vh - 100px)", background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
             {/* Top 70% — Filter Objects */}
             <div style={{ flex: 7, minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 14px 0" }}>
-              <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16, flexShrink: 0 }}>FILTER OBJECTS</div>
-              <div style={{ flex: 1, overflowY: "auto", paddingBottom: 6 }}>
-                {CATEGORIES.map(cat => (
-                  <div key={cat.id} onClick={() => toggleCategory(cat.id)} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: "pointer", opacity: active.length === 0 || active.includes(cat.id) ? 1 : 0.4, transition: "opacity 0.2s" }}>
-                    <div style={{ width: 36, height: 18, borderRadius: 9, background: active.includes(cat.id) ? cat.color : "#1a1a2e", border: `1px solid ${cat.color}`, transition: "background 0.2s", position: "relative" }}>
-                      <div style={{ position: "absolute", top: 2, left: active.includes(cat.id) ? 18 : 2, width: 12, height: 12, borderRadius: "50%", background: active.includes(cat.id) ? "#020818" : cat.color, transition: "left 0.2s" }} />
-                    </div>
-                    <div style={{ color: cat.color, fontSize: 12, letterSpacing: 1 }}>{cat.label}</div>
-                  </div>
-                ))}
-                <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 12 }}>
-                  <div onClick={() => { setActive([]); setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedCodes([]); setFocusedIndex(0); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
-                </div>
-              </div>
+              <FilterPanel
+                isMobile={false}
+                active={active}
+                onToggleCategory={toggleCategory}
+                onReset={() => { setActive([]); setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedCodes([]); setFocusedIndex(0); }}
+              />
             </div>
 
             {/* Bottom 30% — Country Codes */}
-            <div style={{ flex: 3, minHeight: 0, borderTop: "1px solid #00d4ff22", display: "flex", flexDirection: "column", padding: "16px 14px" }}>
-              <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 12, flexShrink: 0 }}>COUNTRY CODES</div>
-              <div style={{ flex: 1, overflowY: "auto", paddingRight: 4 }}>
-                {active.map(catId => {
-                  const cat = CATEGORIES.find(c => c.id === catId);
-                  const codes = catId === "rest_of_world"
-                    ? [...new Set(satsRef.current.filter(s => s.category === "rest_of_world" && s.country_code).map(s => s.country_code))].sort()
-                    : (CATEGORY_CODES[catId] || []);
-                  if (!cat) return null;
-                  return (
-                    <div key={catId} style={{ marginBottom: 12 }}>
-                      <div style={{ color: cat.color, fontSize: 10, letterSpacing: 1, marginBottom: 5 }}>{cat.label.toUpperCase()}</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
-                        {codes.map(code => {
-                          const isSelected = selectedCodes.includes(code);
-                          const isDimmed = codes.filter(c => selectedCodes.includes(c)).length > 0 && !isSelected;
-                          return (
-                            <span key={code} onClick={() => {
-                                setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
-                                const isPlain = !code.startsWith("Name:") && !code.startsWith("Type:") && code !== "All other codes";
-                                if (isPlain) {
-                                  const exists = focusedCodes.findIndex(f => f.code === code);
-                                  if (exists >= 0) {
-                                    const next = focusedCodes.filter((_, i) => i !== exists);
-                                    setFocusedCodes(next);
-                                    setFocusedIndex(Math.max(0, exists < focusedIndex ? focusedIndex - 1 : Math.min(focusedIndex, next.length - 1)));
-                                  } else {
-                                    setFocusedCodes(prev => [...prev, { code, catId }]);
-                                    setFocusedIndex(focusedCodes.length);
-                                  }
-                                }
-                              }}
-                              style={{ background: isSelected ? `${cat.color}44` : `${cat.color}18`, border: `1px solid ${isSelected ? cat.color : `${cat.color}44`}`, borderRadius: 3, color: isSelected ? cat.color : `${cat.color}cc`, fontSize: 9, padding: "2px 5px", letterSpacing: 1, cursor: "pointer", opacity: isDimmed ? 0.35 : 1, transition: "opacity 0.15s, background 0.15s" }}>
-                              {code}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-                {selectedCodes.length > 0 && (
-                  <div style={{ borderTop: "1px solid #00d4ff22", marginTop: 8, paddingTop: 10 }}>
-                    <div onClick={() => { setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedCodes([]); setFocusedIndex(0); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET CODE FILTER</div>
-                  </div>
-                )}
-              </div>
+            <div style={{ flex: 3, minHeight: 0, borderTop: `1px solid ${C.cyan}22`, display: "flex", flexDirection: "column", padding: "16px 14px" }}>
+              <CountryCodesPanel
+                isMobile={false}
+                active={active}
+                selectedCodes={selectedCodes}
+                sats={satsRef.current}
+                onToggleCode={toggleCode}
+                onReset={() => { setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedCodes([]); setFocusedIndex(0); }}
+              />
             </div>
 
           </div>
 
           {/* Right panel — satellite viewer (top 70%) + object data (bottom 30%) */}
-          {(() => {
-            const hasFocused = focusedCodes.length > 0;
-            const current = hasFocused ? (focusedCodes[focusedIndex] || focusedCodes[0]) : null;
-            const pinnedArr = [...pinnedSats];
-            const clampedIdx = pinnedArr.length > 0 ? Math.min(pinnedViewIndex, pinnedArr.length - 1) : 0;
-            const displaySat = pinnedArr.length > 0 ? pinnedArr[clampedIdx] : selected;
-            const cat = current ? CATEGORIES.find(c => c.id === current.catId) : null;
-            const accentColor = cat?.color || "#00d4ff";
-            const listSats = current
-              ? satsRef.current.filter(s => s.country_code === current.code).sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1)
-              : [];
-            const fullName = current ? (COUNTRY_NAMES[current.code] || current.code) : "";
-            const total = focusedCodes.length;
-            const navBtn = (enabled) => ({ color: enabled ? accentColor : `${accentColor}22`, cursor: enabled ? "pointer" : "default", fontSize: 20, padding: "0 3px", userSelect: "none", lineHeight: 1 });
-            return (
-              <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, right: 20, width: 300, height: "calc(100vh - 100px)", background: "#020818cc", border: `1px solid ${accentColor}33`, borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-
-                {/* ── Top 70% — satellite list ── */}
-                <div style={{ flex: 7, minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 14px 0" }}>
-                  {/* Header */}
-                  <div style={{ flexShrink: 0, marginBottom: 8 }}>
-                    {hasFocused ? (
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}>
-                          <span onClick={() => total > 1 && setFocusedIndex((focusedIndex - 1 + total) % total)} style={navBtn(total > 1)}>‹</span>
-                          <div style={{ minWidth: 0, marginLeft: 2 }}>
-                            <div style={{ color: accentColor, fontSize: 14, fontWeight: "bold", letterSpacing: 2 }}>{current.code}</div>
-                            <div style={{ color: "#ffffff", fontSize: 12, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fullName}</div>
-                          </div>
-                          <span onClick={() => total > 1 && setFocusedIndex((focusedIndex + 1) % total)} style={navBtn(total > 1)}>›</span>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                          {total > 1 && <span style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 1 }}>{focusedIndex + 1}/{total}</span>}
-                          <span onClick={() => { setFocusedCodes([]); setFocusedIndex(0); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setSelectedCodes([]); }} style={{ color: "#00d4ff44", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>SATELLITE VIEWER</div>
-                    )}
-                    {hasFocused && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-                        <div style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 2 }}>{listSats.length} OBJECTS</div>
-                        {pinnedSats.size > 0 && current && <span onClick={() => setPinnedSats(prev => { const n = new Set(prev); for (const s of n) { if (s.country_code === current.code) n.delete(s); } return n; })} style={{ color: `${accentColor}66`, fontSize: 9, letterSpacing: 2, cursor: "pointer", borderLeft: `1px solid ${accentColor}22`, paddingLeft: 8 }}>CLEAR SELECTION</span>}
-                      </div>
-                    )}
-                  </div>
-                  {/* Scrollable list */}
-                  <div style={{ flex: 1, overflowY: "auto", paddingBottom: 6 }}>
-                    {hasFocused ? listSats.map(sat => {
-                      const isPinned = pinnedSats.has(sat);
-                      const isActive = isPinned && sat === pinnedArr[clampedIdx];
-                      const togglePin = () => {
-                        setPinnedSats(prev => {
-                          const n = new Set(prev);
-                          if (n.has(sat)) {
-                            n.delete(sat);
-                          } else {
-                            n.add(sat);
-                            setPinnedViewIndex(n.size - 1);
-                          }
-                          return n;
-                        });
-                      };
-                      return (
-                        <div key={sat.norad_cat_id}
-                          onClick={togglePin}
-                          onMouseEnter={e => { if (!isPinned) e.currentTarget.style.background = `${accentColor}11`; }}
-                          onMouseLeave={e => { if (!isPinned) e.currentTarget.style.background = "transparent"; }}
-                          style={{ display: "flex", alignItems: "center", padding: "6px 4px", borderBottom: `1px solid ${accentColor}0d`, cursor: "pointer", borderRadius: 3, background: isActive ? "rgba(220,230,240,0.18)" : isPinned ? `${accentColor}22` : "transparent" }}>
-                          {/* Checkbox */}
-                          <div style={{ width: 13, height: 13, borderRadius: 2, border: `1px solid ${isPinned ? accentColor : `${accentColor}33`}`, background: isPinned ? `${accentColor}33` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginRight: 8 }}>
-                            {isPinned && <div style={{ width: 7, height: 7, borderRadius: 1, background: accentColor }} />}
-                          </div>
-                          <div style={{ color: isActive ? "#ffffff" : isPinned ? "#cccccc" : "#888888", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, paddingRight: 8 }}>{sat.object_name || "UNKNOWN"}</div>
-                          <div style={{ color: `${accentColor}77`, fontSize: 11, flexShrink: 0 }}>{sat.launch_date ? sat.launch_date.substring(0, 4) : "—"}</div>
-                        </div>
-                      );
-                    }) : (
-                      <div style={{ color: "#00d4ff22", fontSize: 12, textAlign: "center", paddingTop: 28, letterSpacing: 0.5, lineHeight: 1.7 }}>Select a country code chip<br/>to browse its satellites</div>
-                    )}
-                  </div>
-                </div>
-
-                {/* ── Bottom 30% — object data ── */}
-                <div style={{ flex: 3, minHeight: 0, borderTop: `1px solid ${accentColor}22`, overflowY: "auto", padding: "16px 14px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexShrink: 0 }}>
-                    <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>OBJECT DATA</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      {pinnedArr.length > 1 && <span onClick={() => { const ni = (clampedIdx - 1 + pinnedArr.length) % pinnedArr.length; setPinnedViewIndex(ni); const fi = focusedCodes.findIndex(f => f.code === pinnedArr[ni].country_code); if (fi !== -1) setFocusedIndex(fi); }} style={{ color: accentColor, cursor: "pointer", fontSize: 18, padding: "0 2px", userSelect: "none", lineHeight: 1 }}>‹</span>}
-                      {pinnedArr.length > 1 && <span style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 1 }}>{clampedIdx + 1}/{pinnedArr.length}</span>}
-                      {pinnedArr.length > 1 && <span onClick={() => { const ni = (clampedIdx + 1) % pinnedArr.length; setPinnedViewIndex(ni); const fi = focusedCodes.findIndex(f => f.code === pinnedArr[ni].country_code); if (fi !== -1) setFocusedIndex(fi); }} style={{ color: accentColor, cursor: "pointer", fontSize: 18, padding: "0 2px", userSelect: "none", lineHeight: 1 }}>›</span>}
-                      {selected && pinnedArr.length === 0 && <span onClick={() => setSelected(null)} style={{ color: "#00d4ff44", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</span>}
-                    </div>
-                  </div>
-                  {displaySat ? (
-                    [["NAME", displaySat.object_name], ["TYPE", displaySat.object_type], ["COUNTRY", displaySat.country_code],
-                     ["LAUNCHED", displaySat.launch_date], ["INCLINATION", displaySat.inclination ? `${displaySat.inclination}°` : "N/A"],
-                     ["APOAPSIS", displaySat.apoapsis ? `${Math.round(displaySat.apoapsis)} km` : "N/A"],
-                     ["PERIAPSIS", displaySat.periapsis ? `${Math.round(displaySat.periapsis)} km` : "N/A"],
-                     ["PERIOD", displaySat.period ? `${Math.round(displaySat.period)} min` : "N/A"],
-                    ].map(([label, value]) => (
-                      <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 11 }}>
-                        <div style={{ color: "#00d4ff66", fontSize: 11, letterSpacing: 1, flexShrink: 0 }}>{label}</div>
-                        <div style={{ color: "#ffffff", fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value || "N/A"}</div>
-                      </div>
-                    ))
-                  ) : (
-                    <div style={{ color: "#00d4ff22", fontSize: 12, letterSpacing: 0.5 }}>Click any satellite for details</div>
-                  )}
-                </div>
-
-              </div>
-            );
-          })()}
+          <SatelliteViewer
+            sats={satsRef.current}
+            focusedCodes={focusedCodes}
+            focusedIndex={focusedIndex}
+            setFocusedIndex={setFocusedIndex}
+            pinnedSats={pinnedSats}
+            setPinnedSats={setPinnedSats}
+            pinnedViewIndex={pinnedViewIndex}
+            setPinnedViewIndex={setPinnedViewIndex}
+            selected={selected}
+            setSelected={setSelected}
+            setSelectedCodes={setSelectedCodes}
+            setFocusedCodes={setFocusedCodes}
+          />
 
           {/* Bottom center — Timeline + Speed side by side */}
           <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 10, alignItems: "stretch" }}>
 
             {/* Timeline */}
-            <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", minWidth: 240 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ color: "#00d4ff", fontSize: 10, letterSpacing: 3 }}>TIMELINE</div>
-                <select
-                  value={timelineYear ?? CURRENT_YEAR}
-                  onChange={e => {
-                    const y = Number(e.target.value);
-                    setTimelineYear(y >= CURRENT_YEAR ? null : y);
-                  }}
-                  style={{ background: "#020818", border: "1px solid #00d4ff44", color: "#00d4ff", fontSize: 13, fontWeight: "bold", padding: "3px 6px", borderRadius: 4, cursor: "pointer", fontFamily: "'Courier New', monospace", letterSpacing: 2 }}
-                >
-                  <option value={CURRENT_YEAR}>PRESENT</option>
-                  {Array.from({ length: CURRENT_YEAR - 1957 }, (_, i) => CURRENT_YEAR - 1 - i).map(year => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
-              </div>
-              <input type="range" min={1957} max={CURRENT_YEAR} step={1}
-                value={timelineYear ?? CURRENT_YEAR}
-                onChange={e => {
-                  const y = Number(e.target.value);
-                  setTimelineYear(y >= CURRENT_YEAR ? null : y);
-                }}
-                style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 6 }} />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: "#00d4ff55", fontSize: 9, letterSpacing: 1 }}>1957</span>
-                <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                  {[
-                    { label: "←", action: stepTimelineBack },
-                    { label: timelinePlaying ? "⏸" : "▶", action: toggleTimelinePlay, active: timelinePlaying },
-                    { label: "→", action: stepTimelineForward },
-                  ].map(btn => (
-                    <div key={btn.label} onClick={btn.action} style={{ color: btn.active ? "#00d4ff" : "#00d4ff88", fontSize: 12, cursor: "pointer", padding: "2px 9px", border: `1px solid ${btn.active ? "#00d4ff" : "#00d4ff33"}`, borderRadius: 3, background: btn.active ? "#00d4ff22" : "transparent", userSelect: "none" }}>
-                      {btn.label}
-                    </div>
-                  ))}
-                </div>
-                <span style={{ color: "#00d4ff55", fontSize: 9, letterSpacing: 1 }}>PRESENT</span>
-              </div>
+            <div style={{ background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", minWidth: 240 }}>
+              <TimelineControl
+                isMobile={false}
+                timelineYear={timelineYear}
+                setTimelineYear={setTimelineYear}
+                currentYear={CURRENT_YEAR}
+                timelinePlaying={timelinePlaying}
+                onStepBack={stepTimelineBack}
+                onTogglePlay={toggleTimelinePlay}
+                onStepForward={stepTimelineForward}
+              />
             </div>
 
             {/* Speed Control */}
-            <div style={{ background: "#020818cc", border: "1px solid #00d4ff33", borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", textAlign: "center", minWidth: 260 }}>
-              <div style={{ color: "#00d4ff", fontSize: 10, letterSpacing: 3, marginBottom: 8 }}>SIMULATION SPEED</div>
-              <input type="range" min="0" max="3600" step="10" value={timeScale}
-                onChange={e => { const v = Number(e.target.value); setTimeScale(v); timeScaleRef.current = v; }}
-                style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 8 }} />
-              <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8 }}>
-                {[["PAUSE", 0], ["1×", 1], ["60×", 60], ["600×", 600], ["3600×", 3600]].map(([label, val]) => (
-                  <div key={val} onClick={() => { setTimeScale(val); timeScaleRef.current = val; }}
-                    style={{ background: timeScale === val ? "#00d4ff33" : "transparent", border: `1px solid ${timeScale === val ? "#00d4ff" : "#00d4ff44"}`, borderRadius: 4, color: timeScale === val ? "#00d4ff" : "#00d4ff88", fontSize: 10, padding: "3px 8px", letterSpacing: 1, cursor: "pointer" }}>
-                    {label}
-                  </div>
-                ))}
-              </div>
-              <div style={{ color: "#00d4ff", fontSize: 12, letterSpacing: 2 }}>
-                {timeScale === 0 ? "PAUSED" : timeScale === 1 ? "REAL TIME" : `${timeScale}×`}
-              </div>
+            <div style={{ background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", textAlign: "center", minWidth: 260 }}>
+              <SpeedControl
+                isMobile={false}
+                timeScale={timeScale}
+                onChange={v => { setTimeScale(v); timeScaleRef.current = v; }}
+              />
             </div>
 
             {/* ISS Tracker — click to toggle */}
-            <div
-              onClick={() => {
-                const enabling = !issEnabled;
-                setIssEnabled(enabling);
-                if (enabling && issData) {
-                  const lat = (Number(issData.latitude) * Math.PI) / 180;
-                  const lon = (Number(issData.longitude) * Math.PI) / 180;
-                  const r = altToRadius(Number(issData.altitude));
-                  const xl = r * Math.cos(lat) * Math.cos(lon);
-                  const zl = r * Math.cos(lat) * Math.sin(lon);
-                  const yl = r * Math.sin(lat);
-                  const d = Math.sqrt(xl * xl + zl * zl);
-                  flyToISSRef.current = { tx: -Math.atan2(yl, d) * 0.4, ty: Math.atan2(-xl, zl) };
-                }
-              }}
-              onMouseEnter={() => setIssHover(true)}
-              onMouseLeave={() => setIssHover(false)}
-              style={{
-                background: "#020818cc",
-                border: `1px solid ${issHover ? "#FFD70088" : "#FFD70033"}`,
-                borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", minWidth: 260,
-                cursor: "pointer",
-                boxShadow: issHover ? `0 0 18px #FFD70033, 0 0 6px #FFD70022` : "none",
-                transition: "box-shadow 0.2s, border-color 0.2s",
-              }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <div style={{ width: 7, height: 7, borderRadius: "50%", background: issEnabled ? "#FFD700" : "#FFD70044", boxShadow: issEnabled ? "0 0 6px #FFD700" : "none", flexShrink: 0 }} />
-                <div style={{ color: "#FFD700", fontSize: 10, letterSpacing: 3 }}>ISS LIVE</div>
-                {!issEnabled && <div style={{ color: "#FFD70066", fontSize: 9, letterSpacing: 2, marginLeft: "auto" }}>OFF</div>}
-              </div>
-              {timelineYear !== null && timelineYear < 1998 ? (
-                <div style={{ color: "#FFD70044", fontSize: 10, letterSpacing: 1 }}>NOT YET LAUNCHED<br/><span style={{ fontSize: 9, letterSpacing: 1 }}>ZARYA: NOV 1998</span></div>
-              ) : issData ? (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "5px 8px" }}>
-                {[["ALT",    `${Number(issData.altitude).toFixed(1)} km`],
-                  ["VEL",    `${Number(issData.velocity).toFixed(2)} km/s`],
-                  ["STATUS", issData.visibility === "daylight" ? "DAYLIGHT" : "ECLIPSE"],
-                  ["LAT",    `${Number(issData.latitude).toFixed(4)}°`],
-                  ["LON",    `${Number(issData.longitude).toFixed(4)}°`],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <div style={{ color: "#FFD70066", fontSize: 9, letterSpacing: 2 }}>{label}</div>
-                    <div style={{ color: issEnabled ? "#FFD700" : "#FFD70044", fontSize: 11 }}>{value}</div>
-                  </div>
-                ))}
-                </div>
-              ) : (
-                <div style={{ color: "#FFD70066", fontSize: 11, letterSpacing: 1 }}>ACQUIRING SIGNAL...</div>
-              )}
-            </div>
+            <ISSPanel
+              isMobile={false}
+              issData={issData}
+              issEnabled={issEnabled}
+              issHover={issHover}
+              timelineYear={timelineYear}
+              onHoverChange={setIssHover}
+              onToggle={toggleISS}
+            />
           </div>
 
         </>
@@ -1520,206 +1159,68 @@ export default function App() {
         <>
           {/* Bottom sheet — slides up when a tab is open */}
           {mobileTab && (
-            <div style={{ position: "fixed", bottom: 64, left: 0, right: 0, background: "#020818f0", borderTop: "1px solid #00d4ff33", borderRadius: "14px 14px 0 0", padding: "18px 20px 12px", maxHeight: "58vh", overflowY: "auto", backdropFilter: "blur(16px)", zIndex: 500 }}>
+            <div style={{ position: "fixed", bottom: 64, left: 0, right: 0, background: `${C.bg}f0`, borderTop: `1px solid ${C.cyan}33`, borderRadius: "14px 14px 0 0", padding: "18px 20px 12px", maxHeight: "58vh", overflowY: "auto", backdropFilter: "blur(16px)", zIndex: 500 }}>
 
               {mobileTab === "filter" && (
-                <>
-                  <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16 }}>FILTER OBJECTS</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px", marginBottom: 16 }}>
-                    {CATEGORIES.map(cat => (
-                      <div key={cat.id} onClick={() => toggleCategory(cat.id)}
-                        style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", opacity: active.length === 0 || active.includes(cat.id) ? 1 : 0.4, padding: "6px 0" }}>
-                        <div style={{ width: 34, height: 18, borderRadius: 9, background: active.includes(cat.id) ? cat.color : "#1a1a2e", border: `1px solid ${cat.color}`, flexShrink: 0, position: "relative" }}>
-                          <div style={{ position: "absolute", top: 2, left: active.includes(cat.id) ? 16 : 2, width: 12, height: 12, borderRadius: "50%", background: active.includes(cat.id) ? "#020818" : cat.color, transition: "left 0.2s" }} />
-                        </div>
-                        <div style={{ color: cat.color, fontSize: 11, letterSpacing: 0.5 }}>{cat.label}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div onClick={() => { setActive([]); setSelectedCodes([]); }} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center", padding: "10px 0", borderTop: "1px solid #00d4ff22" }}>RESET ALL FILTERS</div>
-                </>
+                <FilterPanel
+                  isMobile={true}
+                  active={active}
+                  onToggleCategory={toggleCategory}
+                  onReset={() => { setActive([]); setSelectedCodes([]); }}
+                />
               )}
 
               {mobileTab === "codes" && (
-                <>
-                  <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 12 }}>COUNTRY CODES</div>
-                  {active.length === 0 && <div style={{ color: "#00d4ff44", fontSize: 11, letterSpacing: 1 }}>Enable a filter category to see its country codes.</div>}
-                  {active.map(catId => {
-                    const cat = CATEGORIES.find(c => c.id === catId);
-                    const codes = catId === "rest_of_world"
-                      ? [...new Set(satsRef.current.filter(s => s.category === "rest_of_world" && s.country_code).map(s => s.country_code))].sort()
-                      : (CATEGORY_CODES[catId] || []);
-                    if (!cat) return null;
-                    return (
-                      <div key={catId} style={{ marginBottom: 14 }}>
-                        <div style={{ color: cat.color, fontSize: 10, letterSpacing: 1, marginBottom: 6 }}>{cat.label.toUpperCase()}</div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {codes.map(code => {
-                            const isSelected = selectedCodes.includes(code);
-                            const isDimmed = codes.filter(c => selectedCodes.includes(c)).length > 0 && !isSelected;
-                            return (
-                              <span key={code} onClick={() => {
-                                  setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
-                                  const isPlain = !code.startsWith("Name:") && !code.startsWith("Type:") && code !== "All other codes";
-                                  if (isPlain) {
-                                    const exists = focusedCodes.findIndex(f => f.code === code);
-                                    if (exists >= 0) {
-                                      const next = focusedCodes.filter((_, i) => i !== exists);
-                                      setFocusedCodes(next);
-                                      setFocusedIndex(Math.max(0, exists < focusedIndex ? focusedIndex - 1 : Math.min(focusedIndex, next.length - 1)));
-                                    } else {
-                                      setFocusedCodes(prev => [...prev, { code, catId }]);
-                                      setFocusedIndex(focusedCodes.length);
-                                    }
-                                  }
-                                }}
-                                style={{ background: isSelected ? `${cat.color}44` : `${cat.color}18`, border: `1px solid ${isSelected ? cat.color : `${cat.color}44`}`, borderRadius: 4, color: isSelected ? cat.color : `${cat.color}cc`, fontSize: 11, padding: "4px 8px", letterSpacing: 1, cursor: "pointer", opacity: isDimmed ? 0.35 : 1 }}>
-                                {code}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {selectedCodes.length > 0 && (
-                    <div onClick={() => setSelectedCodes([])} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center", padding: "10px 0", borderTop: "1px solid #00d4ff22", marginTop: 4 }}>RESET CODE FILTER</div>
-                  )}
-                </>
+                <CountryCodesPanel
+                  isMobile={true}
+                  active={active}
+                  selectedCodes={selectedCodes}
+                  sats={satsRef.current}
+                  onToggleCode={toggleCode}
+                  onReset={() => setSelectedCodes([])}
+                />
               )}
 
               {mobileTab === "object" && (
-                <>
-                  <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 14 }}>OBJECT DATA</div>
-                  {selected ? (
-                    <>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px" }}>
-                        {[
-                          ["NAME", selected.object_name], ["TYPE", selected.object_type],
-                          ["COUNTRY", selected.country_code], ["LAUNCHED", selected.launch_date],
-                          ["INCLINATION", selected.inclination ? `${selected.inclination}°` : "N/A"],
-                          ["APOAPSIS", selected.apoapsis ? `${Math.round(selected.apoapsis)} km` : "N/A"],
-                          ["PERIAPSIS", selected.periapsis ? `${Math.round(selected.periapsis)} km` : "N/A"],
-                          ["PERIOD", selected.period ? `${Math.round(selected.period)} min` : "N/A"],
-                        ].map(([label, value]) => (
-                          <div key={label}>
-                            <div style={{ color: "#00d4ff88", fontSize: 10, letterSpacing: 2 }}>{label}</div>
-                            <div style={{ color: "#ffffff", fontSize: 13, marginTop: 2 }}>{value || "N/A"}</div>
-                          </div>
-                        ))}
-                      </div>
-                      <div onClick={() => setSelected(null)} style={{ color: "#00d4ff88", fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center", padding: "10px 0", borderTop: "1px solid #00d4ff22", marginTop: 14 }}>DESELECT</div>
-                    </>
-                  ) : (
-                    <div style={{ color: "#00d4ff44", fontSize: 11, letterSpacing: 1 }}>Tap a satellite on the globe to select it.</div>
-                  )}
-                </>
+                <MobileObjectData selected={selected} onDeselect={() => setSelected(null)} />
               )}
 
               {mobileTab === "iss" && (
-                <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#FFD700", boxShadow: "0 0 8px #FFD700" }} />
-                    <div style={{ color: "#FFD700", fontSize: 11, fontWeight: "bold", letterSpacing: 3 }}>ISS TRACKER</div>
-                  </div>
-                  <div style={{ color: "#FFD70055", fontSize: 10, letterSpacing: 2, marginBottom: 14 }}>INTERNATIONAL SPACE STATION</div>
-                  {timelineYear !== null && timelineYear < 1998 ? (
-                    <div style={{ color: "#FFD70044", fontSize: 11, letterSpacing: 1 }}>NOT YET LAUNCHED<br/><span style={{ fontSize: 9, letterSpacing: 2 }}>ZARYA MODULE: NOV 1998</span></div>
-                  ) : issData ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px" }}>
-                      {[
-                        ["ALTITUDE",  `${Number(issData.altitude).toFixed(1)} km`],
-                        ["VELOCITY",  `${Number(issData.velocity).toFixed(2)} km/s`],
-                        ["LATITUDE",  `${Number(issData.latitude).toFixed(4)}°`],
-                        ["LONGITUDE", `${Number(issData.longitude).toFixed(4)}°`],
-                        ["STATUS",    issData.visibility === "daylight" ? "DAYLIGHT" : "ECLIPSE"],
-                      ].map(([label, value]) => (
-                        <div key={label}>
-                          <div style={{ color: "#FFD70066", fontSize: 10, letterSpacing: 2 }}>{label}</div>
-                          <div style={{ color: "#FFD700", fontSize: 13, marginTop: 2 }}>{value}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ color: "#FFD70066", fontSize: 11 }}>ACQUIRING SIGNAL...</div>
-                  )}
-                </>
+                <ISSPanel isMobile={true} issData={issData} timelineYear={timelineYear} />
               )}
 
               {mobileTab === "time" && (
-                <>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                    <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3 }}>TIMELINE</div>
-                    <select
-                      value={timelineYear ?? CURRENT_YEAR}
-                      onChange={e => {
-                        const y = Number(e.target.value);
-                        setTimelineYear(y >= CURRENT_YEAR ? null : y);
-                      }}
-                      style={{ background: "#020818", border: "1px solid #00d4ff44", color: "#00d4ff", fontSize: 15, fontWeight: "bold", padding: "4px 8px", borderRadius: 4, cursor: "pointer", fontFamily: "'Courier New', monospace", letterSpacing: 2 }}
-                    >
-                      <option value={CURRENT_YEAR}>PRESENT</option>
-                      {Array.from({ length: CURRENT_YEAR - 1957 }, (_, i) => CURRENT_YEAR - 1 - i).map(year => (
-                        <option key={year} value={year}>{year}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <input type="range" min={1957} max={CURRENT_YEAR} step={1}
-                    value={timelineYear ?? CURRENT_YEAR}
-                    onChange={e => {
-                      const y = Number(e.target.value);
-                      setTimelineYear(y >= CURRENT_YEAR ? null : y);
-                    }}
-                    style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 10 }} />
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                    <span style={{ color: "#00d4ff55", fontSize: 10, letterSpacing: 1 }}>1957</span>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      {[
-                        { label: "←", action: stepTimelineBack },
-                        { label: timelinePlaying ? "⏸" : "▶", action: toggleTimelinePlay, active: timelinePlaying },
-                        { label: "→", action: stepTimelineForward },
-                      ].map(btn => (
-                        <div key={btn.label} onClick={btn.action} style={{ color: btn.active ? "#00d4ff" : "#00d4ff88", fontSize: 16, cursor: "pointer", padding: "4px 12px", border: `1px solid ${btn.active ? "#00d4ff" : "#00d4ff33"}`, borderRadius: 4, background: btn.active ? "#00d4ff22" : "transparent", userSelect: "none" }}>
-                          {btn.label}
-                        </div>
-                      ))}
-                    </div>
-                    <span style={{ color: "#00d4ff55", fontSize: 10, letterSpacing: 1 }}>PRESENT</span>
-                  </div>
-                </>
+                <TimelineControl
+                  isMobile={true}
+                  timelineYear={timelineYear}
+                  setTimelineYear={setTimelineYear}
+                  currentYear={CURRENT_YEAR}
+                  timelinePlaying={timelinePlaying}
+                  onStepBack={stepTimelineBack}
+                  onTogglePlay={toggleTimelinePlay}
+                  onStepForward={stepTimelineForward}
+                />
               )}
 
               {mobileTab === "speed" && (
-                <>
-                  <div style={{ color: "#00d4ff", fontSize: 11, letterSpacing: 3, marginBottom: 16 }}>SIMULATION SPEED</div>
-                  <input type="range" min="0" max="3600" step="10" value={timeScale}
-                    onChange={e => { const v = Number(e.target.value); setTimeScale(v); timeScaleRef.current = v; }}
-                    style={{ width: "100%", accentColor: "#00d4ff", cursor: "pointer", marginBottom: 16 }} />
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 6, marginBottom: 12 }}>
-                    {[["PAUSE", 0], ["1×", 1], ["60×", 60], ["600×", 600], ["3600×", 3600]].map(([label, val]) => (
-                      <div key={val} onClick={() => { setTimeScale(val); timeScaleRef.current = val; }}
-                        style={{ flex: 1, textAlign: "center", background: timeScale === val ? "#00d4ff33" : "transparent", border: `1px solid ${timeScale === val ? "#00d4ff" : "#00d4ff44"}`, borderRadius: 6, color: timeScale === val ? "#00d4ff" : "#00d4ff88", fontSize: 12, padding: "8px 4px", letterSpacing: 1, cursor: "pointer" }}>
-                        {label}
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ color: "#00d4ff", fontSize: 13, letterSpacing: 2, textAlign: "center" }}>
-                    {timeScale === 0 ? "PAUSED" : timeScale === 1 ? "REAL TIME" : `${timeScale}×`}
-                  </div>
-                </>
+                <SpeedControl
+                  isMobile={true}
+                  timeScale={timeScale}
+                  onChange={v => { setTimeScale(v); timeScaleRef.current = v; }}
+                />
               )}
             </div>
           )}
 
           {/* Bottom tab bar */}
-          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 64, background: "#020818", borderTop: "1px solid #00d4ff22", display: "flex", zIndex: 600 }}>
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 64, background: C.bg, borderTop: `1px solid ${C.cyan}22`, display: "flex", zIndex: 600 }}>
             {[
-              { id: "filter", label: "FILTER",  icon: "≡",  color: "#00d4ff", badge: active.length > 0 },
-              { id: "codes",  label: "CODES",   icon: "⊞",  color: "#00d4ff", badge: selectedCodes.length > 0 },
-              { id: "object", label: "OBJECT",  icon: "◎",  color: "#00d4ff", badge: !!selected },
-              { id: "iss",    label: "ISS",     icon: "◉",  color: "#FFD700", badge: !!issData },
-              { id: "time",   label: "TIME",    icon: "⏳",  color: "#00d4ff", badge: timelineYear !== null },
-              { id: "speed",  label: "SPEED",   icon: "⏱",  color: "#00d4ff", badge: timeScale !== 60 },
+              { id: "filter", label: "FILTER",  icon: "≡",  color: C.cyan, badge: active.length > 0 },
+              { id: "codes",  label: "CODES",   icon: "⊞",  color: C.cyan, badge: selectedCodes.length > 0 },
+              { id: "object", label: "OBJECT",  icon: "◎",  color: C.cyan, badge: !!selected },
+              { id: "iss",    label: "ISS",     icon: "◉",  color: C.gold, badge: !!issData },
+              { id: "time",   label: "TIME",    icon: "⏳",  color: C.cyan, badge: timelineYear !== null },
+              { id: "speed",  label: "SPEED",   icon: "⏱",  color: C.cyan, badge: timeScale !== 60 },
             ].map(tab => {
               const isActive = mobileTab === tab.id;
               return (
