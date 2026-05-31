@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { ReactComponent as StarlinkV2 } from "../assets/sats/starlink_v2.svg";
+import { ReactComponent as Kuiper } from "../assets/sats/kuiper.svg";
+import { ReactComponent as AstSpaceMobile } from "../assets/sats/ast_spacemobile.svg";
 import { COLORS as C } from "../theme";
 
 // Registry of per-type satellite schematics, keyed by the ids from satVisualId().
 const REGISTRY = {
   starlink_v2: StarlinkV2,
+  kuiper: Kuiper,
+  ast_spacemobile: AstSpaceMobile,
 };
 
 // Renders a satellite's schematic, tinted to `color` (the category accent) via

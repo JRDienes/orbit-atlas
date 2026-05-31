@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { CATEGORIES, COUNTRY_NAMES } from "../utils/constants";
-import { satVisualId, starlinkGenVisualId } from "../utils/satVisual";
+import { satVisualId, starlinkGenVisualId, categoryVisualId } from "../utils/satVisual";
 import SatVisual from "./SatVisual";
 import { COLORS as C } from "../theme";
 
@@ -18,10 +18,13 @@ export default function SatelliteViewer({
   const displaySat = pinnedArr.length > 0 ? pinnedArr[clampedIdx] : selected;
   const cat = current ? CATEGORIES.find(c => c.id === current.catId) : null;
   const accentColor = cat?.color || C.cyan;
+  // `whole` focus entries (single-design constellations like Kuiper) list every
+  // sat in the category; ordinary entries list one filterKey (country/generation).
   const listSats = current
-    ? sats.filter(s => s.filterKey === current.code).sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1)
+    ? sats.filter(s => current.whole ? s.category === current.catId : s.filterKey === current.code).sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1)
     : [];
-  const fullName = current ? (COUNTRY_NAMES[current.code] || current.code) : "";
+  const displayCode = current ? (current.whole ? (cat?.label || current.code) : current.code) : "";
+  const fullName = current ? (current.whole ? "ALL SATELLITES" : (COUNTRY_NAMES[current.code] || current.code)) : "";
   const total = focusedCodes.length;
   const navBtn = (enabled) => ({ color: enabled ? accentColor : `${accentColor}22`, cursor: enabled ? "pointer" : "default", fontSize: 20, padding: "0 3px", userSelect: "none", lineHeight: 1 });
 
@@ -31,7 +34,9 @@ export default function SatelliteViewer({
   // — so it swaps as you scrub ‹ › between generations.
   const displaySatId = displaySat?.norad_cat_id;
   const displayVisualId = displaySat ? satVisualId(displaySat) : null;
-  const focusedVisualId = current ? starlinkGenVisualId(current.code) : null;
+  const focusedVisualId = current
+    ? (current.whole ? categoryVisualId(current.catId) : starlinkGenVisualId(current.code))
+    : null;
   const [showData, setShowData] = useState(false);
   useEffect(() => { setShowData(false); }, [displaySatId]);
   const hasFlip = !!displayVisualId;                              // flip only when a sat is selected
@@ -50,7 +55,7 @@ export default function SatelliteViewer({
               <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}>
                 <span onClick={() => total > 1 && setFocusedIndex((focusedIndex - 1 + total) % total)} style={navBtn(total > 1)}>‹</span>
                 <div style={{ minWidth: 0, marginLeft: 2 }}>
-                  <div style={{ color: accentColor, fontSize: 14, fontWeight: "bold", letterSpacing: 2 }}>{current.code}</div>
+                  <div style={{ color: accentColor, fontSize: 14, fontWeight: "bold", letterSpacing: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{displayCode}</div>
                   <div style={{ color: C.white, fontSize: 12, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fullName}</div>
                 </div>
                 <span onClick={() => total > 1 && setFocusedIndex((focusedIndex + 1) % total)} style={navBtn(total > 1)}>›</span>
@@ -66,7 +71,7 @@ export default function SatelliteViewer({
           {hasFocused && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
               <div style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 2 }}>{listSats.length} OBJECTS</div>
-              {pinnedSats.size > 0 && current && <span onClick={() => setPinnedSats(prev => { const n = new Set(prev); for (const s of n) { if (s.filterKey === current.code) n.delete(s); } return n; })} style={{ color: `${accentColor}66`, fontSize: 9, letterSpacing: 2, cursor: "pointer", borderLeft: `1px solid ${accentColor}22`, paddingLeft: 8 }}>CLEAR SELECTION</span>}
+              {pinnedSats.size > 0 && current && <span onClick={() => setPinnedSats(prev => { const n = new Set(prev); for (const s of n) { if (current.whole ? s.category === current.catId : s.filterKey === current.code) n.delete(s); } return n; })} style={{ color: `${accentColor}66`, fontSize: 9, letterSpacing: 2, cursor: "pointer", borderLeft: `1px solid ${accentColor}22`, paddingLeft: 8 }}>CLEAR SELECTION</span>}
             </div>
           )}
         </div>

@@ -12,6 +12,8 @@ export function satVisualId(sat) {
     if (n >= STARLINK_GEN2_MIN) return "starlink_v2";
     return null;                                    // V1 — no asset yet
   }
+  if (name.includes("KUIPER")) return "kuiper";
+  if (name.includes("BLUEBIRD") || name.includes("SPACEMOBILE")) return "ast_spacemobile";
   return null;
 }
 
@@ -21,4 +23,11 @@ export function satVisualId(sat) {
 const GEN_VISUAL = { V2: "starlink_v2" };
 export function starlinkGenVisualId(code) {
   return GEN_VISUAL[code] || null;
+}
+
+// Visual for a whole single-design constellation category (Kuiper, AST, ...),
+// shown when the category is toggled on with no individual sat selected.
+const CATEGORY_VISUAL = { kuiper: "kuiper", ast_spacemobile: "ast_spacemobile" };
+export function categoryVisualId(catId) {
+  return CATEGORY_VISUAL[catId] || null;
 }

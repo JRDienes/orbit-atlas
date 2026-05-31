@@ -138,9 +138,31 @@ export default function App() {
 
   // Toggle category filter
   function toggleCategory(id) {
+    const turningOn = !active.includes(id);
     setActive(prev =>
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
     );
+
+    // Single-entity categories have nothing to drill into — a constellation
+    // (codes all "Name:" sentinels, e.g. Kuiper, AST SpaceMobile) or a one-code
+    // country (e.g. Japan, India). Toggling the category itself opens the full
+    // list (+ schematic, when one exists) in the viewer.
+    const codes = CATEGORY_CODES[id] || [];
+    const isConstellation = codes.length > 0 && codes.every(c => c.startsWith("Name:"));
+    const plainCodes = codes.filter(c => !c.startsWith("Name:") && !c.startsWith("Type:") && c !== "All other codes");
+    const isSingleEntity = isConstellation || plainCodes.length === 1;
+    if (!isSingleEntity) return;
+
+    const idx = focusedCodes.findIndex(f => f.whole && f.catId === id);
+    if (turningOn && idx < 0) {
+      const next = [...focusedCodes, { code: id, catId: id, whole: true }];
+      setFocusedCodes(next);
+      setFocusedIndex(next.length - 1);
+    } else if (!turningOn && idx >= 0) {
+      const next = focusedCodes.filter((_, i) => i !== idx);
+      setFocusedCodes(next);
+      setFocusedIndex(Math.max(0, Math.min(focusedIndex, next.length - 1)));
+    }
   }
 
   // Toggle a country-code chip: flips it in selectedCodes, and for plain codes
