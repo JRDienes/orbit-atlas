@@ -171,6 +171,7 @@ export default function App() {
   const sceneRef = useRef(null);
   const earthRef = useRef(null);
   const shellsRef = useRef([]);
+  const pinnedShellsRef = useRef([]);
   const isolatedOrbitRef = useRef(null);
   const pinnedSatsRef = useRef(new Set());
   const highlightRef = useRef(null);
@@ -350,6 +351,7 @@ export default function App() {
 
     // Hover highlight — single point updated on mousemove
     let hoveredIdx = -1;
+    let lastHoverTime = 0; // throttle hover raycasts to ~30/s
     const hoverGeo = new THREE.BufferGeometry();
     hoverGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
     const hoverMat = new THREE.PointsMaterial({
@@ -390,7 +392,11 @@ export default function App() {
         prevMouse = { x: e.clientX, y: e.clientY };
         return;
       }
-      // Hover detection when idle
+      // Hover detection when idle — throttled, raycasting 21k points every
+      // mousemove event is wasteful since events outpace the screen refresh.
+      const nowH = performance.now();
+      if (nowH - lastHoverTime < 32) return;
+      lastHoverTime = nowH;
       const { points, satObjects } = pointsRef.current;
       if (!points || !satObjects) return;
       const mouse = new THREE.Vector2(
@@ -747,12 +753,19 @@ export default function App() {
     const { geo, satObjects } = pointsRef.current;
     if (!geo || !satObjects) return;
 
-    // Returns filterable country codes for a category (excludes name/type sentinels)
+    // Returns filterable country codes for a category (excludes name/type sentinels).
+    // Memoized per effect run so the rest_of_world full scan happens once, not per-satellite.
+    const filterableCodesCache = {};
     const getFilterableCodes = (catId) => {
+      if (catId in filterableCodesCache) return filterableCodesCache[catId];
+      let codes;
       if (catId === "rest_of_world") {
-        return [...new Set(satObjects.filter(s => s.category === "rest_of_world" && s.country_code).map(s => s.country_code))];
+        codes = [...new Set(satObjects.filter(s => s.category === "rest_of_world" && s.country_code).map(s => s.country_code))];
+      } else {
+        codes = (CATEGORY_CODES[catId] || []).filter(c => !c.startsWith("Name:") && !c.startsWith("Type:") && c !== "All other codes");
       }
-      return (CATEGORY_CODES[catId] || []).filter(c => !c.startsWith("Name:") && !c.startsWith("Type:") && c !== "All other codes");
+      filterableCodesCache[catId] = codes;
+      return codes;
     };
 
     // Per-category: if any selected codes belong to this cat, filter to those; else show all in cat
@@ -832,45 +845,9 @@ export default function App() {
     const MAX_ORBITS = 300;
     const N = 72; // points per orbit
 
-    if (pinnedSats.size > 0) {
-      const pinnedArr = [...pinnedSats];
-      const activeSat = pinnedArr[Math.min(pinnedViewIndex, pinnedArr.length - 1)];
-      pinnedArr.forEach(sat => {
-        if (!sat.apoapsis || !sat.inclination) return;
-        const isActive = sat === activeSat;
-        const catColor = isActive ? new THREE.Color(0xDDEEFF) : new THREE.Color(CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff");
-        const inc  = (sat.inclination * Math.PI) / 180;
-        const raan = sat.lon ?? (sat.norad_cat_id % 628) / 100;
-        const sinI = Math.sin(inc), cosI = Math.cos(inc);
-        const sinR = Math.sin(raan), cosR = Math.cos(raan);
-        const rApo  = altToRadius(sat.apoapsis);
-        const rPeri = altToRadius(sat.periapsis ?? sat.apoapsis);
-        const a = (rApo + rPeri) / 2;
-        const c = (rApo - rPeri) / 2;
-        const b = Math.sqrt(Math.max(0, a * a - c * c));
-
-        const pts = [];
-        for (let j = 0; j < N; j++) {
-          const theta = (j / N) * Math.PI * 2;
-          const xOrb = a * Math.cos(theta) - c;
-          const zOrb = b * Math.sin(theta);
-          const x = xOrb, y = zOrb * sinI, zeq = zOrb * cosI;
-          pts.push(x * cosR - zeq * sinR, y, x * sinR + zeq * cosR);
-        }
-        const positions = [];
-        for (let j = 0; j < N; j++) {
-          const j3 = j * 3, n3 = ((j + 1) % N) * 3;
-          positions.push(pts[j3], pts[j3+1], pts[j3+2], pts[n3], pts[n3+1], pts[n3+2]);
-        }
-        const orbitGeo = new THREE.BufferGeometry();
-        orbitGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-        const orbitLines = new THREE.LineSegments(orbitGeo, new THREE.LineBasicMaterial({ color: catColor, transparent: true, opacity: isActive ? 0.95 : 0.5 }));
-        orbitLines.renderOrder = 2;
-        earth.add(orbitLines);
-        shellsRef.current.push(orbitLines);
-      });
-      return;
-    }
+    // Pinned-satellite rings are drawn in their own effect (keyed on pinnedViewIndex)
+    // so cycling the ‹ › arrows doesn't re-run this whole dot-recolor pass.
+    if (pinnedSats.size > 0) return;
 
     active.forEach(catId => {
       const selectedInCat = selectedCodes.filter(c => getFilterableCodes(catId).includes(c));
@@ -942,7 +919,63 @@ export default function App() {
       earth.add(orbitLines);
       shellsRef.current.push(orbitLines);
     });
-  }, [active, selectedCodes, timelineYear, selected, pinnedSats, pinnedViewIndex]);
+  }, [active, selectedCodes, timelineYear, selected, pinnedSats]);
+
+  // Pinned-satellite orbit rings — isolated from the main filter effect so cycling
+  // the ‹ › arrows (pinnedViewIndex) only redraws these few rings, not all 21k dots.
+  // Same guards as the category-ring branch: suppressed while a sat is selected,
+  // when no category is active, or when nothing is pinned.
+  useEffect(() => {
+    const earth = earthRef.current;
+    if (selected || active.length === 0 || !earth || pinnedSats.size === 0) return;
+
+    const N = 72;
+    const pinnedArr = [...pinnedSats];
+    const activeSat = pinnedArr[Math.min(pinnedViewIndex, pinnedArr.length - 1)];
+    pinnedArr.forEach(sat => {
+      if (!sat.apoapsis || !sat.inclination) return;
+      const isActive = sat === activeSat;
+      const catColor = isActive ? new THREE.Color(0xDDEEFF) : new THREE.Color(CATEGORIES.find(c => c.id === sat.category)?.color || "#ffffff");
+      const inc  = (sat.inclination * Math.PI) / 180;
+      const raan = sat.lon ?? (sat.norad_cat_id % 628) / 100;
+      const sinI = Math.sin(inc), cosI = Math.cos(inc);
+      const sinR = Math.sin(raan), cosR = Math.cos(raan);
+      const rApo  = altToRadius(sat.apoapsis);
+      const rPeri = altToRadius(sat.periapsis ?? sat.apoapsis);
+      const a = (rApo + rPeri) / 2;
+      const c = (rApo - rPeri) / 2;
+      const b = Math.sqrt(Math.max(0, a * a - c * c));
+
+      const pts = [];
+      for (let j = 0; j < N; j++) {
+        const theta = (j / N) * Math.PI * 2;
+        const xOrb = a * Math.cos(theta) - c;
+        const zOrb = b * Math.sin(theta);
+        const x = xOrb, y = zOrb * sinI, zeq = zOrb * cosI;
+        pts.push(x * cosR - zeq * sinR, y, x * sinR + zeq * cosR);
+      }
+      const positions = [];
+      for (let j = 0; j < N; j++) {
+        const j3 = j * 3, n3 = ((j + 1) % N) * 3;
+        positions.push(pts[j3], pts[j3+1], pts[j3+2], pts[n3], pts[n3+1], pts[n3+2]);
+      }
+      const orbitGeo = new THREE.BufferGeometry();
+      orbitGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      const orbitLines = new THREE.LineSegments(orbitGeo, new THREE.LineBasicMaterial({ color: catColor, transparent: true, opacity: isActive ? 0.95 : 0.5 }));
+      orbitLines.renderOrder = 2;
+      earth.add(orbitLines);
+      pinnedShellsRef.current.push(orbitLines);
+    });
+
+    return () => {
+      pinnedShellsRef.current.forEach(obj => {
+        if (earthRef.current) earthRef.current.remove(obj);
+        obj.geometry.dispose();
+        obj.material.dispose();
+      });
+      pinnedShellsRef.current = [];
+    };
+  }, [pinnedSats, pinnedViewIndex, selected, active]);
 
   // Keep pinnedSatsRef in sync for animation loop reads
   useEffect(() => { pinnedSatsRef.current = pinnedSats; }, [pinnedSats]);
