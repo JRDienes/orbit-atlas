@@ -700,7 +700,8 @@ export default function App() {
       if (!inCat) return false;
       const catCodes = getFilterableCodes(sat.category);
       const selectedInCat = selectedCodes.filter(c => catCodes.includes(c));
-      return selectedInCat.length === 0 || selectedInCat.includes(sat.country_code);
+      // filterKey = generation for Starlink, country code otherwise
+      return selectedInCat.length === 0 || selectedInCat.includes(sat.filterKey);
     };
 
     // Pre-computed RGB per category — avoids allocating a new THREE.Color per satellite
@@ -779,7 +780,7 @@ export default function App() {
         s.apoapsis != null &&
         s.inclination != null &&
         !s.timelineHidden &&
-        (selectedInCat.length === 0 || selectedInCat.includes(s.country_code))
+        (selectedInCat.length === 0 || selectedInCat.includes(s.filterKey))
       );
       if (catSats.length === 0) return;
 

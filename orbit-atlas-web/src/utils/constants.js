@@ -1,6 +1,14 @@
 // Static lookup tables for satellite categorization and display.
 // Pure data — no React or Three.js dependencies.
 
+// Starlink generation is read from the numeric suffix in "STARLINK-N":
+//   Gen 1 (v1.0/v1.5): N < 30000   |   Gen 2 (V2 Mini): N >= 30000
+//   Gen 3 (V3, launches on Starship) is not in the catalog yet. Its numbering
+//   is unknown until the first batch appears — set STARLINK_GEN3_MIN to that
+//   starting number when it does, and Gen 3 sats will split out automatically.
+export const STARLINK_GEN2_MIN = 30000;
+export const STARLINK_GEN3_MIN = Infinity;
+
 export const CATEGORIES = [
   { id: "starlink",       label: "SpaceX / Starlink",   color: "#00D4FF" }, // SpaceX cyan
   { id: "kuiper",         label: "Amazon Kuiper",       color: "#FF9900" }, // Amazon orange
@@ -20,7 +28,7 @@ export const CATEGORIES = [
 ];
 
 export const CATEGORY_CODES = {
-  starlink:       ["Name: STARLINK"],
+  starlink:       ["V1", "V2", "V3"],
   kuiper:         ["Name: KUIPER"],
   ast_spacemobile: ["Name: BLUEBIRD", "Name: SPACEMOBILE"],
   us:            ["US", "CA", "AUS", "NZ", "GLOB", "ORB", "O3B", "ITSO"],
@@ -40,6 +48,8 @@ export const CATEGORY_CODES = {
 };
 
 export const COUNTRY_NAMES = {
+  // Starlink generation chips (filtered like country codes)
+  V1: "Starlink V1 (Gen 1)", V2: "Starlink V2 Mini (Gen 2)", V3: "Starlink V3 (Gen 3)",
   US: "United States", CA: "Canada", AUS: "Australia", NZ: "New Zealand",
   GLOB: "Global / Intelsat", ORB: "Orbcomm", O3B: "O3B Networks", ITSO: "ITSO",
   UK: "United Kingdom", IM: "Isle of Man",

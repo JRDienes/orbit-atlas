@@ -19,6 +19,21 @@ const CATEGORIES = [
   { id: "rocket_body",     color: "#778899" },
 ];
 
+// Starlink generation from the numeric suffix in "STARLINK-N", returned as the
+// chip code used for sub-filtering (like a country code). Keep the thresholds in
+// sync with STARLINK_GEN2_MIN / STARLINK_GEN3_MIN in utils/constants.js.
+// Gen 3 (V3, Starship) has not launched; set GEN3_MIN to its starting number when known.
+const STARLINK_GEN2_MIN = 30000;
+const STARLINK_GEN3_MIN = Infinity;
+
+function starlinkGen(name) {
+  const m = name.match(/STARLINK-(\d+)/);
+  const n = m ? parseInt(m[1], 10) : NaN;
+  if (n >= STARLINK_GEN3_MIN) return "V3";
+  if (n >= STARLINK_GEN2_MIN) return "V2";
+  return "V1"; // older numbering + any unparseable names
+}
+
 function categorize(sat) {
   const name = sat.object_name?.toUpperCase() || "";
   const country = sat.country_code || "";
@@ -91,6 +106,12 @@ self.onmessage = function ({ data: { sats } }) {
     const cat = categorize(sat);
     const [cr, cg, cb] = hexToRgb(CATEGORIES.find(c => c.id === cat)?.color || "#ffffff");
 
+    // filterKey is the value the code-chips filter on within a category:
+    // Starlink → generation (V1/V2/V3), everything else → country code.
+    const filterKey = cat === "starlink"
+      ? starlinkGen((sat.object_name || "").toUpperCase())
+      : sat.country_code;
+
     positions.push(x, y, z);
     colors.push(cr, cg, cb);
 
@@ -104,7 +125,7 @@ self.onmessage = function ({ data: { sats } }) {
       apoapsis:     sat.apoapsis,
       periapsis:    sat.periapsis,
       period:       sat.period,
-      category: cat, lon, x, y, z, theta, angularSpeed, a, b, c, sinI, cosI, sinR, cosR,
+      category: cat, filterKey, lon, x, y, z, theta, angularSpeed, a, b, c, sinI, cosI, sinR, cosR,
     });
   });
 

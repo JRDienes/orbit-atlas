@@ -16,7 +16,7 @@ export default function SatelliteViewer({
   const cat = current ? CATEGORIES.find(c => c.id === current.catId) : null;
   const accentColor = cat?.color || C.cyan;
   const listSats = current
-    ? sats.filter(s => s.country_code === current.code).sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1)
+    ? sats.filter(s => s.filterKey === current.code).sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1)
     : [];
   const fullName = current ? (COUNTRY_NAMES[current.code] || current.code) : "";
   const total = focusedCodes.length;
@@ -50,7 +50,7 @@ export default function SatelliteViewer({
           {hasFocused && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
               <div style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 2 }}>{listSats.length} OBJECTS</div>
-              {pinnedSats.size > 0 && current && <span onClick={() => setPinnedSats(prev => { const n = new Set(prev); for (const s of n) { if (s.country_code === current.code) n.delete(s); } return n; })} style={{ color: `${accentColor}66`, fontSize: 9, letterSpacing: 2, cursor: "pointer", borderLeft: `1px solid ${accentColor}22`, paddingLeft: 8 }}>CLEAR SELECTION</span>}
+              {pinnedSats.size > 0 && current && <span onClick={() => setPinnedSats(prev => { const n = new Set(prev); for (const s of n) { if (s.filterKey === current.code) n.delete(s); } return n; })} style={{ color: `${accentColor}66`, fontSize: 9, letterSpacing: 2, cursor: "pointer", borderLeft: `1px solid ${accentColor}22`, paddingLeft: 8 }}>CLEAR SELECTION</span>}
             </div>
           )}
         </div>
@@ -96,9 +96,9 @@ export default function SatelliteViewer({
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexShrink: 0 }}>
           <div style={{ color: C.cyan, fontSize: 11, letterSpacing: 3 }}>OBJECT DATA</div>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            {pinnedArr.length > 1 && <span onClick={() => { const ni = (clampedIdx - 1 + pinnedArr.length) % pinnedArr.length; setPinnedViewIndex(ni); const fi = focusedCodes.findIndex(f => f.code === pinnedArr[ni].country_code); if (fi !== -1) setFocusedIndex(fi); }} style={{ color: accentColor, cursor: "pointer", fontSize: 18, padding: "0 2px", userSelect: "none", lineHeight: 1 }}>‹</span>}
+            {pinnedArr.length > 1 && <span onClick={() => { const ni = (clampedIdx - 1 + pinnedArr.length) % pinnedArr.length; setPinnedViewIndex(ni); const fi = focusedCodes.findIndex(f => f.code === pinnedArr[ni].filterKey); if (fi !== -1) setFocusedIndex(fi); }} style={{ color: accentColor, cursor: "pointer", fontSize: 18, padding: "0 2px", userSelect: "none", lineHeight: 1 }}>‹</span>}
             {pinnedArr.length > 1 && <span style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 1 }}>{clampedIdx + 1}/{pinnedArr.length}</span>}
-            {pinnedArr.length > 1 && <span onClick={() => { const ni = (clampedIdx + 1) % pinnedArr.length; setPinnedViewIndex(ni); const fi = focusedCodes.findIndex(f => f.code === pinnedArr[ni].country_code); if (fi !== -1) setFocusedIndex(fi); }} style={{ color: accentColor, cursor: "pointer", fontSize: 18, padding: "0 2px", userSelect: "none", lineHeight: 1 }}>›</span>}
+            {pinnedArr.length > 1 && <span onClick={() => { const ni = (clampedIdx + 1) % pinnedArr.length; setPinnedViewIndex(ni); const fi = focusedCodes.findIndex(f => f.code === pinnedArr[ni].filterKey); if (fi !== -1) setFocusedIndex(fi); }} style={{ color: accentColor, cursor: "pointer", fontSize: 18, padding: "0 2px", userSelect: "none", lineHeight: 1 }}>›</span>}
             {selected && pinnedArr.length === 0 && <span onClick={() => setSelected(null)} style={{ color: `${C.cyan}44`, cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</span>}
           </div>
         </div>
