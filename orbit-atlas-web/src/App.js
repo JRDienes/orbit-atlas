@@ -717,9 +717,12 @@ export default function App() {
       const inPinSet = pinnedSats.size > 0 && pinnedSats.has(sat);
       const isSelected = !!selected && sat.norad_cat_id === selected.norad_cat_id;
 
+      // Hide sats that are pin/selection-excluded, not yet launched, or filtered
+      // out by the active category/code filters — no more dim grey dots.
       const shouldHide =
         (pinnedSats.size > 0 && !inPinSet) ||
-        (pinnedSats.size === 0 && !!selected && !isSelected);
+        (pinnedSats.size === 0 && !!selected && !isSelected) ||
+        (!inPinSet && !isSelected && !satVisible(sat));
 
       if (shouldHide || notYetLaunched) {
         pa.array[i * 3] = 0; pa.array[i * 3 + 1] = 0; pa.array[i * 3 + 2] = 0;
@@ -735,11 +738,9 @@ export default function App() {
       sat.timelineHidden = false;
       if (isSelected) {
         newColors.push(1, 0.95, 0.1); // bright gold
-      } else if (inPinSet || satVisible(sat)) {
+      } else {
         const [r, g, b] = catRGB[sat.category] || [1, 1, 1];
         newColors.push(r, g, b);
-      } else {
-        newColors.push(0.05, 0.05, 0.1);
       }
     });
     pa.needsUpdate = true;
