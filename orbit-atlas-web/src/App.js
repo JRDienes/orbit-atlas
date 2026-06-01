@@ -11,6 +11,8 @@ import LoadingOverlay from "./components/LoadingOverlay";
 import WelcomeBanner from "./components/WelcomeBanner";
 import Header from "./components/Header";
 import About from "./components/About";
+import GlobalKey from "./components/GlobalKey";
+import ResetButton from "./components/ResetButton";
 import TimelineControl from "./components/TimelineControl";
 import SpeedControl from "./components/SpeedControl";
 import ISSPanel from "./components/ISSPanel";
@@ -50,6 +52,7 @@ export default function App() {
   const [issEnabled, setIssEnabled] = useState(true);
   const [issHover, setIssHover] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [globalKeyOpen, setGlobalKeyOpen] = useState(false);
   const satsRef = useRef([]);
   const pointsRef = useRef([]);
   const sceneRef = useRef(null);
@@ -136,33 +139,46 @@ export default function App() {
   // Keep ref in sync so interval closure always reads the latest year
   useEffect(() => { timelineYearRef.current = timelineYear; }, [timelineYear]);
 
+  // Reset every filter and selection back to the default view.
+  function resetAll() {
+    setActive([]);
+    setSelectedCodes([]);
+    setPinnedSats(new Set());
+    setPinnedViewIndex(0);
+    setSelected(null);
+    setFocusedCodes([]);
+    setFocusedIndex(0);
+  }
+
   // Toggle category filter
   function toggleCategory(id) {
     const turningOn = !active.includes(id);
-    setActive(prev =>
-      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
-    );
+    const nextActive = active.includes(id) ? active.filter(c => c !== id) : [...active, id];
+    setActive(nextActive);
 
-    // Single-entity categories have nothing to drill into — a constellation
-    // (codes all "Name:" sentinels, e.g. Kuiper, AST SpaceMobile) or a one-code
-    // country (e.g. Japan, India). Toggling the category itself opens the full
-    // list (+ schematic, when one exists) in the viewer.
+    // Keep the viewer list (focusedCodes) in sync with the category filter:
+    // drop a toggled-off category's entries, then keep only entries whose
+    // category is still visible (active is a whitelist; empty = all visible).
+    let nextFocused = focusedCodes;
+    if (!turningOn) nextFocused = nextFocused.filter(f => f.catId !== id);
+    nextFocused = nextFocused.filter(f => nextActive.length === 0 || nextActive.includes(f.catId));
+
+    // Single-entity categories are one brand/operator and become a scrubbable
+    // entry in the viewer when toggled: a constellation (codes all "Name:"
+    // sentinels, e.g. Kuiper, AST SpaceMobile), Starlink (one brand, with V1/V2/V3
+    // as sub-codes), or a one-code country (e.g. Japan, India). Multi-country
+    // categories (US, China, Europe...) are still drilled via their code chips.
     const codes = CATEGORY_CODES[id] || [];
     const isConstellation = codes.length > 0 && codes.every(c => c.startsWith("Name:"));
     const plainCodes = codes.filter(c => !c.startsWith("Name:") && !c.startsWith("Type:") && c !== "All other codes");
-    const isSingleEntity = isConstellation || plainCodes.length === 1;
-    if (!isSingleEntity) return;
-
-    const idx = focusedCodes.findIndex(f => f.whole && f.catId === id);
-    if (turningOn && idx < 0) {
-      const next = [...focusedCodes, { code: id, catId: id, whole: true }];
-      setFocusedCodes(next);
-      setFocusedIndex(next.length - 1);
-    } else if (!turningOn && idx >= 0) {
-      const next = focusedCodes.filter((_, i) => i !== idx);
-      setFocusedCodes(next);
-      setFocusedIndex(Math.max(0, Math.min(focusedIndex, next.length - 1)));
+    const isSingleEntity = isConstellation || id === "starlink" || plainCodes.length === 1;
+    if (isSingleEntity && turningOn && !nextFocused.some(f => f.whole && f.catId === id)) {
+      nextFocused = [...nextFocused, { code: id, catId: id, whole: true }];
+      if (isMobile) setMobileTab("object");   // surface the list/schematic on mobile
     }
+
+    setFocusedCodes(nextFocused);
+    setFocusedIndex(Math.max(0, Math.min(focusedIndex, nextFocused.length - 1)));
   }
 
   // Toggle a country-code chip: flips it in selectedCodes, and for plain codes
@@ -1093,10 +1109,16 @@ export default function App() {
       {showWelcome && <WelcomeBanner isMobile={isMobile} visible={welcomeVisible && !welcomeExiting} />}
 
       {/* Header */}
-      <Header isMobile={isMobile} loading={loading} visibleCount={visibleCount} onMenuClick={() => setAboutOpen(true)} />
+      <Header isMobile={isMobile} loading={loading} visibleCount={visibleCount} onMenuClick={() => setAboutOpen(true)} onKeyClick={() => setGlobalKeyOpen(true)} />
 
       {/* About panel */}
       <About open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <GlobalKey open={globalKeyOpen} onClose={() => setGlobalKeyOpen(false)} sats={satsRef.current} isMobile={isMobile} />
+      <ResetButton
+        isMobile={isMobile}
+        show={active.length > 0 || selectedCodes.length > 0 || focusedCodes.length > 0 || !!selected || pinnedSats.size > 0}
+        onReset={resetAll}
+      />
 
       {/* ── DESKTOP LAYOUT ── */}
       {!isMobile && (
@@ -1188,6 +1210,11 @@ export default function App() {
       {/* ── MOBILE LAYOUT ── */}
       {isMobile && (
         <>
+          {/* Tap outside the sheet (above the tab bar) to close it */}
+          {mobileTab && (
+            <div onClick={() => setMobileTab(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 64, zIndex: 499 }} />
+          )}
+
           {/* Bottom sheet — slides up when a tab is open */}
           {mobileTab && (
             <div style={{ position: "fixed", bottom: 64, left: 0, right: 0, background: `${C.bg}f0`, borderTop: `1px solid ${C.cyan}33`, borderRadius: "14px 14px 0 0", padding: "18px 20px 12px", maxHeight: "58vh", overflowY: "auto", backdropFilter: "blur(16px)", zIndex: 500 }}>
@@ -1213,7 +1240,14 @@ export default function App() {
               )}
 
               {mobileTab === "object" && (
-                <MobileObjectData selected={selected} onDeselect={() => setSelected(null)} />
+                <MobileObjectData
+                  selected={selected}
+                  setSelected={setSelected}
+                  focusedCodes={focusedCodes}
+                  focusedIndex={focusedIndex}
+                  setFocusedIndex={setFocusedIndex}
+                  sats={satsRef.current}
+                />
               )}
 
               {mobileTab === "iss" && (
@@ -1248,7 +1282,7 @@ export default function App() {
             {[
               { id: "filter", label: "FILTER",  icon: "≡",  color: C.cyan, badge: active.length > 0 },
               { id: "codes",  label: "CODES",   icon: "⊞",  color: C.cyan, badge: selectedCodes.length > 0 },
-              { id: "object", label: "OBJECT",  icon: "◎",  color: C.cyan, badge: !!selected },
+              { id: "object", label: "OBJECT",  icon: "◎",  color: C.cyan, badge: !!selected || focusedCodes.length > 0 },
               { id: "iss",    label: "ISS",     icon: "◉",  color: C.gold, badge: !!issData },
               { id: "time",   label: "TIME",    icon: "⏳",  color: C.cyan, badge: timelineYear !== null },
               { id: "speed",  label: "SPEED",   icon: "⏱",  color: C.cyan, badge: timeScale !== 60 },

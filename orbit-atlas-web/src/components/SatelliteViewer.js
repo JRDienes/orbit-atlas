@@ -51,19 +51,16 @@ export default function SatelliteViewer({
         {/* Header */}
         <div style={{ flexShrink: 0, marginBottom: 8 }}>
           {hasFocused ? (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}>
-                <span onClick={() => total > 1 && setFocusedIndex((focusedIndex - 1 + total) % total)} style={navBtn(total > 1)}>‹</span>
-                <div style={{ minWidth: 0, marginLeft: 2 }}>
-                  <div style={{ color: accentColor, fontSize: 14, fontWeight: "bold", letterSpacing: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{displayCode}</div>
-                  <div style={{ color: C.white, fontSize: 12, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fullName}</div>
-                </div>
-                <span onClick={() => total > 1 && setFocusedIndex((focusedIndex + 1) % total)} style={navBtn(total > 1)}>›</span>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              {/* Arrows pinned to the row ends; the label flex-fills between so the
+                  right arrow doesn't shift as the code/name width changes. */}
+              <span onClick={() => total > 1 && setFocusedIndex((focusedIndex - 1 + total) % total)} style={{ ...navBtn(total > 1), flexShrink: 0 }}>‹</span>
+              <div style={{ flex: 1, minWidth: 0, textAlign: "center", padding: "0 4px" }}>
+                <div style={{ color: accentColor, fontSize: 14, fontWeight: "bold", letterSpacing: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{displayCode}</div>
+                <div style={{ color: C.white, fontSize: 12, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fullName}{total > 1 ? `  ·  ${focusedIndex + 1}/${total}` : ""}</div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                {total > 1 && <span style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 1 }}>{focusedIndex + 1}/{total}</span>}
-                <span onClick={() => { setFocusedCodes([]); setFocusedIndex(0); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setSelectedCodes([]); }} style={{ color: `${C.cyan}44`, cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</span>
-              </div>
+              <span onClick={() => total > 1 && setFocusedIndex((focusedIndex + 1) % total)} style={{ ...navBtn(total > 1), flexShrink: 0 }}>›</span>
+              <span onClick={() => { setFocusedCodes([]); setFocusedIndex(0); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setSelectedCodes([]); }} style={{ color: `${C.cyan}44`, cursor: "pointer", fontSize: 18, lineHeight: 1, paddingLeft: 6, flexShrink: 0 }}>×</span>
             </div>
           ) : (
             <div style={{ color: C.cyan, fontSize: 11, letterSpacing: 3 }}>SATELLITE VIEWER</div>

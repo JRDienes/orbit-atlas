@@ -27,7 +27,7 @@ export function starlinkGenVisualId(code) {
 
 // Visual for a whole single-design constellation category (Kuiper, AST, ...),
 // shown when the category is toggled on with no individual sat selected.
-const CATEGORY_VISUAL = { kuiper: "kuiper", ast_spacemobile: "ast_spacemobile" };
+const CATEGORY_VISUAL = { starlink: "starlink_v2", kuiper: "kuiper", ast_spacemobile: "ast_spacemobile" };
 export function categoryVisualId(catId) {
   return CATEGORY_VISUAL[catId] || null;
 }
