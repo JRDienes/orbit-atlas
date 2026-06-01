@@ -9,7 +9,7 @@ import { COLORS as C } from "../theme";
 export default function SatelliteViewer({
   sats, focusedCodes, focusedIndex, setFocusedIndex,
   pinnedSats, setPinnedSats, pinnedViewIndex, setPinnedViewIndex,
-  selected, setSelected, setSelectedCodes, setFocusedCodes,
+  selected, setSelected, setSelectedCodes, setActive,
 }) {
   const hasFocused = focusedCodes.length > 0;
   const current = hasFocused ? (focusedCodes[focusedIndex] || focusedCodes[0]) : null;
@@ -21,7 +21,7 @@ export default function SatelliteViewer({
   // `whole` focus entries (single-design constellations like Kuiper) list every
   // sat in the category; ordinary entries list one filterKey (country/generation).
   const listSats = current
-    ? sats.filter(s => current.whole ? s.category === current.catId : s.filterKey === current.code).sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1)
+    ? sats.filter(s => s.category === current.catId && (current.whole || s.filterKey === current.code)).sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1)
     : [];
   const displayCode = current ? (current.whole ? (cat?.label || current.code) : current.code) : "";
   const fullName = current ? (current.whole ? "ALL SATELLITES" : (COUNTRY_NAMES[current.code] || current.code)) : "";
@@ -44,7 +44,7 @@ export default function SatelliteViewer({
   const imageId = displaySat ? displayVisualId : focusedVisualId;
 
   return (
-    <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, right: 20, width: 300, height: "calc(100vh - 100px)", background: `${C.bg}cc`, border: `1px solid ${accentColor}33`, borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, right: 20, width: 300, bottom: 150, background: `${C.bg}cc`, border: `1px solid ${accentColor}33`, borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
       {/* ── Top 70% — satellite list ── */}
       <div style={{ flex: 7, minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 14px 0" }}>
@@ -60,7 +60,7 @@ export default function SatelliteViewer({
                 <div style={{ color: C.white, fontSize: 12, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fullName}{total > 1 ? `  ·  ${focusedIndex + 1}/${total}` : ""}</div>
               </div>
               <span onClick={() => total > 1 && setFocusedIndex((focusedIndex + 1) % total)} style={{ ...navBtn(total > 1), flexShrink: 0 }}>›</span>
-              <span onClick={() => { setFocusedCodes([]); setFocusedIndex(0); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setSelectedCodes([]); }} style={{ color: `${C.cyan}44`, cursor: "pointer", fontSize: 18, lineHeight: 1, paddingLeft: 6, flexShrink: 0 }}>×</span>
+              <span onClick={() => { setActive([]); setSelectedCodes([]); setFocusedIndex(0); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); }} style={{ color: `${C.cyan}44`, cursor: "pointer", fontSize: 18, lineHeight: 1, paddingLeft: 6, flexShrink: 0 }}>×</span>
             </div>
           ) : (
             <div style={{ color: C.cyan, fontSize: 11, letterSpacing: 3 }}>SATELLITE VIEWER</div>
@@ -68,7 +68,7 @@ export default function SatelliteViewer({
           {hasFocused && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
               <div style={{ color: `${accentColor}55`, fontSize: 10, letterSpacing: 2 }}>{listSats.length} OBJECTS</div>
-              {pinnedSats.size > 0 && current && <span onClick={() => setPinnedSats(prev => { const n = new Set(prev); for (const s of n) { if (current.whole ? s.category === current.catId : s.filterKey === current.code) n.delete(s); } return n; })} style={{ color: `${accentColor}66`, fontSize: 9, letterSpacing: 2, cursor: "pointer", borderLeft: `1px solid ${accentColor}22`, paddingLeft: 8 }}>CLEAR SELECTION</span>}
+              {pinnedSats.size > 0 && current && <span onClick={() => setPinnedSats(prev => { const n = new Set(prev); for (const s of n) { if (s.category === current.catId && (current.whole || s.filterKey === current.code)) n.delete(s); } return n; })} style={{ color: `${accentColor}66`, fontSize: 9, letterSpacing: 2, cursor: "pointer", borderLeft: `1px solid ${accentColor}22`, paddingLeft: 8 }}>CLEAR SELECTION</span>}
             </div>
           )}
         </div>

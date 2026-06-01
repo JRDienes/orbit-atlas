@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import * as satellite from "satellite.js";
 import { createClient } from "@supabase/supabase-js";
@@ -29,12 +29,45 @@ const supabase = createClient(
 const ISS_TRAIL_LEN = 18;
 const ISS_COLOR = new THREE.Color("#FFD700");
 
+// Drill-able country/generation codes for a category (excludes Name:/Type:/
+// "All other codes" sentinels). rest_of_world has no static codes.
+function filterableCodes(catId) {
+  return (CATEGORY_CODES[catId] || []).filter(c => !c.startsWith("Name:") && !c.startsWith("Type:") && c !== "All other codes");
+}
+
+// The satellite-viewer scrub list, derived from the active categories + the
+// selected codes — mirroring the globe's per-category rule: a category shows
+// ALL its codes (one "whole" entry) until you drill into specific codes, then
+// it shows just those. e.g. Starlink+CIS+Middle East → [all Starlink, CIS,
+// all Middle East].
+function deriveFocused(active, selectedCodes) {
+  const entries = [];
+  for (const catId of active) {
+    const catCodes = filterableCodes(catId);
+    const sel = selectedCodes.filter(c => catCodes.includes(c));
+    if (sel.length > 0) sel.forEach(code => entries.push({ code, catId }));
+    else entries.push({ code: catId, catId, whole: true });
+  }
+  return entries;
+}
+
+// Layout mode is orientation-aware: any device in portrait uses the mobile
+// layout (so tablets standing up match phones), and only wide landscape screens
+// (tablets in landscape / desktops, >= 1000px) get the desktop layout. The
+// 1000px floor keeps phones-in-landscape (<= ~932px) on mobile.
+function computeIsMobile() {
+  const portrait = window.innerHeight >= window.innerWidth;
+  return portrait || window.innerWidth < 1000;
+}
+
 export default function App() {
   const mountRef = useRef(null);
   const [active, setActive] = useState([]);
   const [selectedCodes, setSelectedCodes] = useState([]);
-  const [focusedCodes, setFocusedCodes] = useState([]);
   const [focusedIndex, setFocusedIndex] = useState(0);
+  const focusedCodes = useMemo(() => deriveFocused(active, selectedCodes), [active, selectedCodes]);
+  // Keep the focused index valid as the derived scrub list changes.
+  useEffect(() => { setFocusedIndex(i => Math.max(0, Math.min(i, focusedCodes.length - 1))); }, [focusedCodes.length]);
   const [selected, setSelected] = useState(null);
   const [pinnedSats, setPinnedSats] = useState(new Set());
   const [pinnedViewIndex, setPinnedViewIndex] = useState(0);
@@ -67,6 +100,7 @@ export default function App() {
   const issFutureRef = useRef(null);
   const issSatrecRef = useRef(null);
   const chunkIdxRef = useRef(0);
+  const fullPosUpdateRef = useRef(false); // request a full position-buffer upload (filters changed)
   const cameraRef = useRef(null);
   const flyToISSRef = useRef(null);
   const issHaloRef = useRef(null);
@@ -81,10 +115,11 @@ export default function App() {
   const timelineYearRef = useRef(null);
   const timelineIntervalRef = useRef(null);
   const CURRENT_YEAR = new Date().getFullYear();
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(computeIsMobile);
+  const [wideHeader, setWideHeader] = useState(() => window.innerWidth > 600);
   const [mobileTab, setMobileTab] = useState(null);
   const mobileTabRef = useRef(null);
-  const isMobileRef = useRef(window.innerWidth < 768);
+  const isMobileRef = useRef(computeIsMobile());
 
   // Fade out loading overlay, then show welcome on first visit only
   useEffect(() => {
@@ -117,15 +152,20 @@ export default function App() {
     }
   }, [welcomeMinTimeDone, visibleCount, showWelcome]);
 
-  // Track mobile breakpoint
+  // Track layout mode — re-evaluate on resize and on device rotation.
   useEffect(() => {
     const onResize = () => {
-      const mobile = window.innerWidth < 768;
+      const mobile = computeIsMobile();
       setIsMobile(mobile);
       isMobileRef.current = mobile;
+      setWideHeader(window.innerWidth > 600);
     };
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
   }, []);
 
   // Keep mobileTabRef in sync so touch handlers can read current value
@@ -146,7 +186,6 @@ export default function App() {
     setPinnedSats(new Set());
     setPinnedViewIndex(0);
     setSelected(null);
-    setFocusedCodes([]);
     setFocusedIndex(0);
     stopTimelinePlay();
     setTimelineYear(null);
@@ -155,52 +194,43 @@ export default function App() {
     timeScaleRef.current = 60;
   }
 
-  // Toggle category filter
+  // Toggle a category. The scrub list derives from active + selectedCodes, so a
+  // toggled-on category shows ALL its codes until you drill into specific ones.
+  // Turning a category off also drops any codes selected within it.
   function toggleCategory(id) {
     const turningOn = !active.includes(id);
-    const nextActive = active.includes(id) ? active.filter(c => c !== id) : [...active, id];
+    const nextActive = turningOn ? [...active, id] : active.filter(c => c !== id);
     setActive(nextActive);
 
-    // Keep the viewer list (focusedCodes) in sync with the category filter:
-    // drop a toggled-off category's entries, then keep only entries whose
-    // category is still visible (active is a whitelist; empty = all visible).
-    let nextFocused = focusedCodes;
-    if (!turningOn) nextFocused = nextFocused.filter(f => f.catId !== id);
-    nextFocused = nextFocused.filter(f => nextActive.length === 0 || nextActive.includes(f.catId));
-
-    // Single-entity categories are one brand/operator and become a scrubbable
-    // entry in the viewer when toggled: a constellation (codes all "Name:"
-    // sentinels, e.g. Kuiper, AST SpaceMobile), Starlink (one brand, with V1/V2/V3
-    // as sub-codes), or a one-code country (e.g. Japan, India). Multi-country
-    // categories (US, China, Europe...) are still drilled via their code chips.
-    const codes = CATEGORY_CODES[id] || [];
-    const isConstellation = codes.length > 0 && codes.every(c => c.startsWith("Name:"));
-    const plainCodes = codes.filter(c => !c.startsWith("Name:") && !c.startsWith("Type:") && c !== "All other codes");
-    const isSingleEntity = isConstellation || id === "starlink" || plainCodes.length === 1;
-    if (isSingleEntity && turningOn && !nextFocused.some(f => f.whole && f.catId === id)) {
-      nextFocused = [...nextFocused, { code: id, catId: id, whole: true }];
+    let nextSelected = selectedCodes;
+    if (!turningOn) {
+      const catCodes = filterableCodes(id);
+      nextSelected = selectedCodes.filter(c => !catCodes.includes(c));
+      if (nextSelected.length !== selectedCodes.length) setSelectedCodes(nextSelected);
     }
 
-    setFocusedCodes(nextFocused);
-    setFocusedIndex(Math.max(0, Math.min(focusedIndex, nextFocused.length - 1)));
+    // Jump the scrubber to the toggled category's entry (or clamp on removal).
+    const next = deriveFocused(nextActive, nextSelected);
+    setFocusedIndex(turningOn ? Math.max(0, next.length - 1) : Math.max(0, Math.min(focusedIndex, next.length - 1)));
   }
 
-  // Toggle a country-code chip: flips it in selectedCodes, and for plain codes
-  // (not Name:/Type: sentinels) also adds/removes it from the focused drill-down
-  // list that drives the satellite viewer.
+  // Toggle a country-code chip within a category. Selecting a code narrows that
+  // category from "all" to just the selected code(s); deselecting the last one
+  // returns it to "all". Sentinel codes (Name:/Type:) are no-ops for the scrub.
   function toggleCode(code, catId) {
-    setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
-    const isPlain = !code.startsWith("Name:") && !code.startsWith("Type:") && code !== "All other codes";
-    if (isPlain) {
-      const exists = focusedCodes.findIndex(f => f.code === code);
-      if (exists >= 0) {
-        const next = focusedCodes.filter((_, i) => i !== exists);
-        setFocusedCodes(next);
-        setFocusedIndex(Math.max(0, exists < focusedIndex ? focusedIndex - 1 : Math.min(focusedIndex, next.length - 1)));
-      } else {
-        setFocusedCodes(prev => [...prev, { code, catId }]);
-        setFocusedIndex(focusedCodes.length);
-      }
+    const has = selectedCodes.includes(code);
+    const nextSelected = has ? selectedCodes.filter(c => c !== code) : [...selectedCodes, code];
+    setSelectedCodes(nextSelected);
+
+    let nextActive = active;
+    if (!has && !active.includes(catId)) { nextActive = [...active, catId]; setActive(nextActive); }
+
+    const next = deriveFocused(nextActive, nextSelected);
+    if (!has) {
+      const idx = next.findIndex(e => e.code === code && e.catId === catId);
+      setFocusedIndex(idx >= 0 ? idx : Math.max(0, next.length - 1));
+    } else {
+      setFocusedIndex(i => Math.max(0, Math.min(i, next.length - 1)));
     }
   }
 
@@ -267,9 +297,12 @@ export default function App() {
     camera.position.z = 7;
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    // Lighter GPU settings on phones/tablets — skip MSAA and cap the pixel ratio
+    // lower (the two biggest mobile GPU costs).
+    const mobileGpu = computeIsMobile();
+    const renderer = new THREE.WebGLRenderer({ antialias: !mobileGpu, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobileGpu ? 1.5 : 2));
     mountRef.current.appendChild(renderer.domElement);
 
     // Earth globe
@@ -519,27 +552,39 @@ export default function App() {
       const dt = lastFrameTimeRef.current ? Math.min(frameTime - lastFrameTimeRef.current, 100) * timeScaleRef.current : 0;
       lastFrameTimeRef.current = frameTime;
       const { geo: pGeo, satObjects: pSats } = pointsRef.current;
-      if (pGeo && pSats?.length && dt > 0) {
+      if (pGeo && pSats?.length) {
         const pa = pGeo.getAttribute("position");
-        const start = chunkIdxRef.current;
-        const end = Math.min(start + CHUNK, pSats.length);
-        for (let i = start; i < end; i++) {
-          const s = pSats[i];
-          if (!s.angularSpeed || s.timelineHidden) continue;
-          s.theta += s.angularSpeed * dt;
-          const xOrb = s.a * Math.cos(s.theta) - s.c;
-          const zOrb = s.b * Math.sin(s.theta);
-          // Same Keplerian math as orbit lines — both are Earth-local children of earth mesh
-          const nx = xOrb * s.cosR - zOrb * s.cosI * s.sinR;
-          const ny = zOrb * s.sinI;
-          const nz = xOrb * s.sinR + zOrb * s.cosI * s.cosR;
-          pa.array[i * 3]     = nx;
-          pa.array[i * 3 + 1] = ny;
-          pa.array[i * 3 + 2] = nz;
-          s.x = nx; s.y = ny; s.z = nz;
+        let chunkStart = -1, chunkCount = 0;
+        if (dt > 0) {
+          const start = chunkIdxRef.current;
+          const end = Math.min(start + CHUNK, pSats.length);
+          for (let i = start; i < end; i++) {
+            const s = pSats[i];
+            if (!s.angularSpeed || s.timelineHidden) continue;
+            s.theta += s.angularSpeed * dt;
+            const xOrb = s.a * Math.cos(s.theta) - s.c;
+            const zOrb = s.b * Math.sin(s.theta);
+            // Same Keplerian math as orbit lines — both are Earth-local children of earth mesh
+            const nx = xOrb * s.cosR - zOrb * s.cosI * s.sinR;
+            const ny = zOrb * s.sinI;
+            const nz = xOrb * s.sinR + zOrb * s.cosI * s.cosR;
+            pa.array[i * 3]     = nx;
+            pa.array[i * 3 + 1] = ny;
+            pa.array[i * 3 + 2] = nz;
+            s.x = nx; s.y = ny; s.z = nz;
+          }
+          chunkStart = start; chunkCount = end - start;
+          chunkIdxRef.current = end >= pSats.length ? 0 : end;
         }
-        pa.needsUpdate = true;
-        chunkIdxRef.current = end >= pSats.length ? 0 : end;
+        // Upload the whole buffer when filters just changed; otherwise only the
+        // chunk that moved (avoids re-uploading all ~21k points every frame).
+        if (fullPosUpdateRef.current) {
+          fullPosUpdateRef.current = false;
+          pa.needsUpdate = true;
+        } else if (chunkCount > 0) {
+          pa.addUpdateRange(chunkStart * 3, chunkCount * 3);
+          pa.needsUpdate = true;
+        }
       }
 
       renderer.render(scene, camera);
@@ -796,7 +841,7 @@ export default function App() {
         newColors.push(r, g, b);
       }
     });
-    pa.needsUpdate = true;
+    fullPosUpdateRef.current = true; // all dot positions changed — full upload next frame
     geo.setAttribute("color", new THREE.Float32BufferAttribute(newColors, 3));
     geo.attributes.color.needsUpdate = true;
 
@@ -1119,7 +1164,7 @@ export default function App() {
       {showWelcome && <WelcomeBanner isMobile={isMobile} visible={welcomeVisible && !welcomeExiting} />}
 
       {/* Header */}
-      <Header isMobile={isMobile} loading={loading} visibleCount={visibleCount} onMenuClick={() => setAboutOpen(true)} onKeyClick={() => setGlobalKeyOpen(true)} />
+      <Header isMobile={isMobile} showObjectsLabel={wideHeader} loading={loading} visibleCount={visibleCount} onMenuClick={() => setAboutOpen(true)} onKeyClick={() => setGlobalKeyOpen(true)} />
 
       {/* About panel */}
       <About open={aboutOpen} onClose={() => setAboutOpen(false)} />
@@ -1134,7 +1179,7 @@ export default function App() {
       {!isMobile && (
         <>
           {/* Left panel — filter (top 70%) + country codes (bottom 30%) */}
-          <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, left: 20, width: 300, height: "calc(100vh - 100px)", background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, left: 20, width: 300, bottom: 150, background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
             {/* Top 70% — Filter Objects */}
             <div style={{ flex: 7, minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 14px 0" }}>
@@ -1142,7 +1187,7 @@ export default function App() {
                 isMobile={false}
                 active={active}
                 onToggleCategory={toggleCategory}
-                onReset={() => { setActive([]); setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedCodes([]); setFocusedIndex(0); }}
+                onReset={() => { setActive([]); setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedIndex(0); }}
               />
             </div>
 
@@ -1154,7 +1199,7 @@ export default function App() {
                 selectedCodes={selectedCodes}
                 sats={satsRef.current}
                 onToggleCode={toggleCode}
-                onReset={() => { setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedCodes([]); setFocusedIndex(0); }}
+                onReset={() => { setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedIndex(0); }}
               />
             </div>
 
@@ -1173,7 +1218,7 @@ export default function App() {
             selected={selected}
             setSelected={setSelected}
             setSelectedCodes={setSelectedCodes}
-            setFocusedCodes={setFocusedCodes}
+            setActive={setActive}
           />
 
           {/* Bottom center — Timeline + Speed side by side */}
@@ -1229,7 +1274,7 @@ export default function App() {
               fixed-height flex column (its list scrolls internally) so it doesn't
               grow/shrink as you scrub; other tabs size to their content. */}
           {mobileTab && (
-            <div style={{ position: "fixed", bottom: 64, left: 0, right: 0, background: `${C.bg}f0`, borderTop: `1px solid ${C.cyan}33`, borderRadius: "14px 14px 0 0", padding: "18px 20px 12px", height: mobileTab === "object" ? "58vh" : undefined, maxHeight: "58vh", overflowY: mobileTab === "object" ? "hidden" : "auto", backdropFilter: "blur(16px)", zIndex: 500, display: "flex", flexDirection: "column" }}>
+            <div style={{ position: "fixed", bottom: 64, left: 0, right: 0, background: `${C.bg}f0`, borderTop: `1px solid ${C.cyan}33`, borderRadius: "14px 14px 0 0", padding: "18px 20px 12px", height: mobileTab === "object" && (focusedCodes.length > 0 || selected) ? "58vh" : undefined, maxHeight: "58vh", overflowY: mobileTab === "object" && (focusedCodes.length > 0 || selected) ? "hidden" : "auto", backdropFilter: "blur(16px)", zIndex: 500, display: "flex", flexDirection: "column" }}>
 
               {mobileTab === "filter" && (
                 <FilterPanel
@@ -1295,7 +1340,7 @@ export default function App() {
               { id: "filter", label: "FILTER",  icon: "≡",  color: C.cyan, badge: active.length > 0 },
               { id: "codes",  label: "CODES",   icon: "⊞",  color: C.cyan, badge: selectedCodes.length > 0 },
               { id: "object", label: "OBJECT",  icon: "◎",  color: C.cyan, badge: !!selected || focusedCodes.length > 0 },
-              { id: "iss",    label: "ISS",     icon: "◉",  color: C.gold, badge: !!issData },
+              { id: "iss",    label: "ISS",     icon: "◉",  color: C.gold, badge: issEnabled },
               { id: "time",   label: "TIME",    icon: (<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.2" /><path d="M8 4.6 V8 L10.3 9.6" /></svg>), color: C.cyan, badge: timelineYear !== null },
               { id: "speed",  label: "SPEED",   icon: (<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M2.6 12 a5.7 5.7 0 1 1 10.8 0" /><path d="M8 8.4 L11 6" /><circle cx="8" cy="8.4" r="0.9" fill="currentColor" stroke="none" /></svg>), color: C.cyan, badge: timeScale !== 60 },
             ].map(tab => {

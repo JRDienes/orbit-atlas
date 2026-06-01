@@ -2,7 +2,7 @@ import { COLORS as C } from "../theme";
 
 // Top header bar — logo (click to refresh), title, an "about" hamburger and a
 // "global key" button, and the live object count.
-export default function Header({ isMobile, loading, visibleCount, onMenuClick, onKeyClick }) {
+export default function Header({ isMobile, showObjectsLabel, loading, visibleCount, onMenuClick, onKeyClick }) {
   return (
     <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: isMobile ? "12px 16px" : "20px 30px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.cyan}22`, background: `linear-gradient(180deg, ${C.bg} 0%, transparent 100%)` }}>
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16 }}>
@@ -39,7 +39,7 @@ export default function Header({ isMobile, loading, visibleCount, onMenuClick, o
         ) : (
           <>
             <span style={{ color: C.cyan, fontSize: isMobile ? 19 : 28, fontWeight: "bold", letterSpacing: 1, textShadow: `0 0 14px ${C.cyan}77` }}>{visibleCount.toLocaleString()}</span>
-            <span style={{ color: `${C.cyan}aa`, fontSize: isMobile ? 9 : 12, letterSpacing: 2, fontWeight: "bold" }}>OBJECTS</span>
+            {showObjectsLabel && <span style={{ color: `${C.cyan}aa`, fontSize: isMobile ? 10 : 12, letterSpacing: 2, fontWeight: "bold" }}>OBJECTS</span>}
           </>
         )}
       </div>

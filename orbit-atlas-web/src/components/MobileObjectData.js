@@ -16,7 +16,7 @@ export default function MobileObjectData({ selected, setSelected, focusedCodes, 
   const total = focusedCodes.length;
 
   const listSats = current
-    ? sats.filter(s => current.whole ? s.category === current.catId : s.filterKey === current.code).sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1)
+    ? sats.filter(s => s.category === current.catId && (current.whole || s.filterKey === current.code)).sort((a, b) => (a.launch_date || "9999") < (b.launch_date || "9999") ? -1 : 1)
     : [];
   const displayCode = current ? (current.whole ? (cat?.label || current.code) : current.code) : "";
   const fullName = current ? (current.whole ? "ALL SATELLITES" : (COUNTRY_NAMES[current.code] || current.code)) : "";
@@ -89,13 +89,12 @@ export default function MobileObjectData({ selected, setSelected, focusedCodes, 
           <span onClick={() => total > 1 && setFocusedIndex((focusedIndex + 1) % total)} style={{ color: total > 1 ? accentColor : `${accentColor}22`, cursor: total > 1 ? "pointer" : "default", fontSize: 22, padding: "0 6px", userSelect: "none", flexShrink: 0 }}>›</span>
         </div>
 
-        {focusVisualId && (
-          <div style={{ marginBottom: 12, borderBottom: `1px solid ${accentColor}22`, paddingBottom: 12, flexShrink: 0 }}>
-            <SatVisual id={focusVisualId} color={accentColor} isMobile={true} />
-          </div>
-        )}
-
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          {focusVisualId && (
+            <div style={{ marginBottom: 12, borderBottom: `1px solid ${accentColor}22`, paddingBottom: 12 }}>
+              <SatVisual id={focusVisualId} color={accentColor} isMobile={true} />
+            </div>
+          )}
           {listSats.map(sat => (
             <div key={sat.norad_cat_id} onClick={() => setSelected(sat)}
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 4px", borderBottom: `1px solid ${accentColor}11`, cursor: "pointer" }}>
