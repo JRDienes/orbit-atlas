@@ -139,7 +139,7 @@ export default function App() {
   // Keep ref in sync so interval closure always reads the latest year
   useEffect(() => { timelineYearRef.current = timelineYear; }, [timelineYear]);
 
-  // Reset every filter and selection back to the default view.
+  // Reset every filter, selection, and the timeline/speed back to defaults.
   function resetAll() {
     setActive([]);
     setSelectedCodes([]);
@@ -148,6 +148,11 @@ export default function App() {
     setSelected(null);
     setFocusedCodes([]);
     setFocusedIndex(0);
+    stopTimelinePlay();
+    setTimelineYear(null);
+    timelineYearRef.current = null;
+    setTimeScale(60);
+    timeScaleRef.current = 60;
   }
 
   // Toggle category filter
@@ -174,7 +179,6 @@ export default function App() {
     const isSingleEntity = isConstellation || id === "starlink" || plainCodes.length === 1;
     if (isSingleEntity && turningOn && !nextFocused.some(f => f.whole && f.catId === id)) {
       nextFocused = [...nextFocused, { code: id, catId: id, whole: true }];
-      if (isMobile) setMobileTab("object");   // surface the list/schematic on mobile
     }
 
     setFocusedCodes(nextFocused);
@@ -417,6 +421,9 @@ export default function App() {
       else setSelected(null);
     };
     const onTouchStart = e => {
+      // Only the globe canvas drives rotation/zoom/select — let touches on UI
+      // overlays (sheets, sliders, lists) keep their native scroll/drag.
+      if (e.target !== renderer.domElement) return;
       if (e.touches.length === 1) {
         isDragging = true; dragMoved = false;
         prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -429,6 +436,9 @@ export default function App() {
       }
     };
     const onTouchMove = e => {
+      // Touchmove keeps the touchstart target, so this only fires for canvas
+      // drags — UI overlays scroll natively (no preventDefault stealing it).
+      if (e.target !== renderer.domElement) return;
       e.preventDefault();
       if (e.touches.length === 1 && isDragging) {
         const dx = e.touches[0].clientX - prevMouse.x;
@@ -448,7 +458,7 @@ export default function App() {
       }
     };
     const onTouchEnd = e => {
-      if (!dragMoved && e.changedTouches.length === 1 && !mobileTabRef.current) {
+      if (e.target === renderer.domElement && !dragMoved && e.changedTouches.length === 1 && !mobileTabRef.current) {
         performTapSelect(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
       }
       isDragging = false;
@@ -1116,7 +1126,7 @@ export default function App() {
       <GlobalKey open={globalKeyOpen} onClose={() => setGlobalKeyOpen(false)} sats={satsRef.current} isMobile={isMobile} />
       <ResetButton
         isMobile={isMobile}
-        show={active.length > 0 || selectedCodes.length > 0 || focusedCodes.length > 0 || !!selected || pinnedSats.size > 0}
+        show={active.length > 0 || selectedCodes.length > 0 || focusedCodes.length > 0 || !!selected || pinnedSats.size > 0 || timelineYear !== null || timeScale !== 60}
         onReset={resetAll}
       />
 
@@ -1215,9 +1225,11 @@ export default function App() {
             <div onClick={() => setMobileTab(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 64, zIndex: 499 }} />
           )}
 
-          {/* Bottom sheet — slides up when a tab is open */}
+          {/* Bottom sheet — slides up when a tab is open. The object tab is a
+              fixed-height flex column (its list scrolls internally) so it doesn't
+              grow/shrink as you scrub; other tabs size to their content. */}
           {mobileTab && (
-            <div style={{ position: "fixed", bottom: 64, left: 0, right: 0, background: `${C.bg}f0`, borderTop: `1px solid ${C.cyan}33`, borderRadius: "14px 14px 0 0", padding: "18px 20px 12px", maxHeight: "58vh", overflowY: "auto", backdropFilter: "blur(16px)", zIndex: 500 }}>
+            <div style={{ position: "fixed", bottom: 64, left: 0, right: 0, background: `${C.bg}f0`, borderTop: `1px solid ${C.cyan}33`, borderRadius: "14px 14px 0 0", padding: "18px 20px 12px", height: mobileTab === "object" ? "58vh" : undefined, maxHeight: "58vh", overflowY: mobileTab === "object" ? "hidden" : "auto", backdropFilter: "blur(16px)", zIndex: 500, display: "flex", flexDirection: "column" }}>
 
               {mobileTab === "filter" && (
                 <FilterPanel
@@ -1251,7 +1263,7 @@ export default function App() {
               )}
 
               {mobileTab === "iss" && (
-                <ISSPanel isMobile={true} issData={issData} timelineYear={timelineYear} />
+                <ISSPanel isMobile={true} issData={issData} issEnabled={issEnabled} timelineYear={timelineYear} onToggle={toggleISS} />
               )}
 
               {mobileTab === "time" && (
@@ -1284,8 +1296,8 @@ export default function App() {
               { id: "codes",  label: "CODES",   icon: "⊞",  color: C.cyan, badge: selectedCodes.length > 0 },
               { id: "object", label: "OBJECT",  icon: "◎",  color: C.cyan, badge: !!selected || focusedCodes.length > 0 },
               { id: "iss",    label: "ISS",     icon: "◉",  color: C.gold, badge: !!issData },
-              { id: "time",   label: "TIME",    icon: "⏳",  color: C.cyan, badge: timelineYear !== null },
-              { id: "speed",  label: "SPEED",   icon: "⏱",  color: C.cyan, badge: timeScale !== 60 },
+              { id: "time",   label: "TIME",    icon: (<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="6.2" /><path d="M8 4.6 V8 L10.3 9.6" /></svg>), color: C.cyan, badge: timelineYear !== null },
+              { id: "speed",  label: "SPEED",   icon: (<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M2.6 12 a5.7 5.7 0 1 1 10.8 0" /><path d="M8 8.4 L11 6" /><circle cx="8" cy="8.4" r="0.9" fill="currentColor" stroke="none" /></svg>), color: C.cyan, badge: timeScale !== 60 },
             ].map(tab => {
               const isActive = mobileTab === tab.id;
               return (

@@ -36,7 +36,7 @@ export default function MobileObjectData({ selected, setSelected, focusedCodes, 
   if (selected) {
     return (
       <>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {hasFocused && <span onClick={() => setSelected(null)} style={{ color: selAccent, cursor: "pointer", fontSize: 12, letterSpacing: 1 }}>‹ LIST</span>}
             <div style={{ color: C.cyan, fontSize: 11, letterSpacing: 3 }}>{showImage ? "SCHEMATIC" : "OBJECT DATA"}</div>
@@ -50,6 +50,7 @@ export default function MobileObjectData({ selected, setSelected, focusedCodes, 
           <span onClick={() => setSelected(null)} style={{ color: `${C.cyan}88`, cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</span>
         </div>
 
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         {showImage ? (
           <SatVisual id={selVisualId} color={selAccent} isMobile={true} />
         ) : (
@@ -69,6 +70,7 @@ export default function MobileObjectData({ selected, setSelected, focusedCodes, 
             ))}
           </div>
         )}
+        </div>
       </>
     );
   }
@@ -77,7 +79,7 @@ export default function MobileObjectData({ selected, setSelected, focusedCodes, 
   if (current) {
     return (
       <>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 10, flexShrink: 0 }}>
           {/* Arrows pinned to the row ends; label flex-fills between. */}
           <span onClick={() => total > 1 && setFocusedIndex((focusedIndex - 1 + total) % total)} style={{ color: total > 1 ? accentColor : `${accentColor}22`, cursor: total > 1 ? "pointer" : "default", fontSize: 22, padding: "0 6px", userSelect: "none", flexShrink: 0 }}>‹</span>
           <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
@@ -88,12 +90,12 @@ export default function MobileObjectData({ selected, setSelected, focusedCodes, 
         </div>
 
         {focusVisualId && (
-          <div style={{ marginBottom: 12, borderBottom: `1px solid ${accentColor}22`, paddingBottom: 12 }}>
+          <div style={{ marginBottom: 12, borderBottom: `1px solid ${accentColor}22`, paddingBottom: 12, flexShrink: 0 }}>
             <SatVisual id={focusVisualId} color={accentColor} isMobile={true} />
           </div>
         )}
 
-        <div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
           {listSats.map(sat => (
             <div key={sat.norad_cat_id} onClick={() => setSelected(sat)}
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 4px", borderBottom: `1px solid ${accentColor}11`, cursor: "pointer" }}>
