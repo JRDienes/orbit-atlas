@@ -366,7 +366,9 @@ export default function App() {
     let dragMoved = false;
     let prevMouse = { x: 0, y: 0 };
     let mouseDownPos = { x: 0, y: 0 };
+    let lastTouchTime = 0; // suppress synthesized "ghost" mouse events right after a touch
     const onMouseDown = e => {
+      if (Date.now() - lastTouchTime < 600) return;
       flyToISSRef.current = null;
       isDragging = true;
       dragMoved = false;
@@ -376,6 +378,7 @@ export default function App() {
     const onMouseUp = () => { isDragging = false; };
     const onMouseMove = e => {
       if (isMobileRef.current) return;
+      if (Date.now() - lastTouchTime < 600) return;
       if (isDragging) {
         const dx = e.clientX - prevMouse.x;
         const dy = e.clientY - prevMouse.y;
@@ -420,6 +423,7 @@ export default function App() {
     // Guard: only process clicks directly on the WebGL canvas so UI panel clicks don't clear the selection
     const onClick = e => {
       if (isMobileRef.current) return;
+      if (Date.now() - lastTouchTime < 600) return;
       if (dragMoved) return;
       if (e.target !== renderer.domElement) return;
       if (hoveredIdx >= 0) {
@@ -454,6 +458,7 @@ export default function App() {
       else setSelected(null);
     };
     const onTouchStart = e => {
+      lastTouchTime = Date.now();
       // Only the globe canvas drives rotation/zoom/select — let touches on UI
       // overlays (sheets, sliders, lists) keep their native scroll/drag.
       if (e.target !== renderer.domElement) return;
@@ -469,6 +474,7 @@ export default function App() {
       }
     };
     const onTouchMove = e => {
+      lastTouchTime = Date.now();
       // Touchmove keeps the touchstart target, so this only fires for canvas
       // drags — UI overlays scroll natively (no preventDefault stealing it).
       if (e.target !== renderer.domElement) return;
@@ -491,6 +497,7 @@ export default function App() {
       }
     };
     const onTouchEnd = e => {
+      lastTouchTime = Date.now();
       if (e.target === renderer.domElement && !dragMoved && e.changedTouches.length === 1 && !mobileTabRef.current) {
         performTapSelect(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
       }

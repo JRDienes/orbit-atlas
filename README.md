@@ -55,7 +55,7 @@ Space-Track.org API (U.S. Space Force)
 - [x] Supabase PostgreSQL database with 31,142 tracked objects
 - [x] Paginated data loading to bypass Supabase row limits
 - [x] Upsert logic to prevent duplicate records on refresh
-- [x] Weekly automated pipeline via GitHub Actions (every Monday)
+- [x] Weekly automated pipeline via GitHub Actions (Space-Track → Supabase fetch Saturday night, X post Sunday morning)
 - [x] Secure credential management via `.env` and GitHub Secrets
 
 ### Frontend / Globe
@@ -70,6 +70,8 @@ Space-Track.org API (U.S. Space Force)
 - [x] Smooth satellite occlusion behind Earth
 - [x] Vercel deployment with auto-deploy on push
 - [x] Vercel Web Analytics
+- [x] Orbit Atlas logo in the top-left header (radial-gradient mask blends edges into the dark background, click to refresh)
+- [x] About panel — hamburger button beside the logo opens a centered, animated overlay describing the project, with a Follow @OrbitAtlasX button
 
 ### Satellite Categories & Filtering
 - [x] 15 operator categories with country-representative colors (SpaceX/Starlink, Amazon Kuiper, AST SpaceMobile, US, UK, Europe/ESA, Russia, China, Japan, India, Middle East, Asia Pacific, Rest of World, Debris, Rocket Bodies)
@@ -112,15 +114,27 @@ Space-Track.org API (U.S. Space Force)
 - [x] Separate Saturday 11pm ET fetch cron and Sunday 10am ET post cron — gap allows manual data review before posting
 - [x] `workflow_dispatch` on both workflows for manual trigger from GitHub Actions UI
 
+### Performance & Architecture
+- [x] Removed TLE lines from the initial load — ~3.3× smaller payload (~1.7 MB → ~0.5 MB compressed), much faster first paint
+- [x] Propagation moved fully off-thread; `satellite.js` dropped from the Web Worker bundle (10.5 kB → 2.1 kB), kept only for the ISS track
+- [x] Uniform orbital-shell placement — fixed clumping / empty-hemisphere artifact by placing dots directly on their orbit ellipses with random RAAN + phase
+- [x] Killed an O(n²) recompute in the filter effect (memoized per-category code lookups)
+- [x] Throttled the hover raycast (~30/s) for smoother frame rate on mouse move
+- [x] Pinned-orbit rings isolated into their own effect — cycling the ‹ › arrows no longer recolors all 21k points
+- [x] Non-matching satellites hide on filter instead of rendering as dim grey dots
+- [x] Refactored the monolithic `App.js` (~1,700 lines) into focused components, `utils/`, and a single `theme.js` color/font palette
+- [x] `CLAUDE.md` documents project conventions so the structure doesn't regress
+
 ---
 
 ## 🚧 Roadmap
 
 ### 🌐 Globe & Visualization
-- [x] Real TLE-based positioning using satellite.js — one-time SGP4 propagation at page load
-- [x] Animated satellite movement along orbital paths — Keplerian theta propagation, chunked per-frame updates
+- [x] Keplerian orbital placement in a Web Worker — uniform shell, computed off the main thread, no per-visit TLE download
+- [x] Animated satellite movement along orbital paths — period-driven theta propagation, chunked per-frame updates
 - [x] Simulation speed slider — PAUSE, 1×, 60×, 600×, 3600× presets with Earth rotation locked to same timescale
-- [ ] Real-time orbital propagation (update positions every 30s via full SGP4)
+- [ ] Accurate TLE-based positioning — fetch TLEs and run SGP4 to snap dots to true real-time positions (lazily, after the fast Keplerian first paint), so positions match reality not just orbit geometry
+- [ ] Real-time orbital propagation (refresh positions periodically)
 - [ ] Level of detail (LOD) — fewer points when zoomed out
 - [ ] Full 27,000+ object rendering including debris
 
@@ -213,7 +227,7 @@ Space-Track.org API (U.S. Space Force)
 | Layer | Technology |
 |---|---|
 | Frontend | React 19, Three.js |
-| Orbital Math | satellite.js 4.x (SGP4/SDP4 TLE propagation) |
+| Orbital Math | Keplerian placement (Web Worker); satellite.js 4.x SGP4 for the live ISS track |
 | Database | Supabase (PostgreSQL) |
 | Data Pipeline | Python 3.11, requests, python-dotenv |
 | Scheduling | GitHub Actions (weekly cron) |
@@ -272,7 +286,7 @@ npm start
 
 | Source | Data | Update Frequency |
 |---|---|---|
-| Space-Track.org (U.S. Space Force) | All tracked orbital objects, TLE data, conjunction data | Weekly |
+| Space-Track.org (U.S. Space Force) | Orbital elements (inclination, apoapsis, period, etc.) for all tracked objects; TLEs used for the ISS track | Weekly |
 | wheretheiss.at | ISS real-time position | Every 5 seconds |
 | NASA APIs | Mission data, crew info, imagery | On demand |
 | N2YO API | Real-time positions, pass predictions | Real-time |
