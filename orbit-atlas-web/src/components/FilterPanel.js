@@ -4,7 +4,12 @@ import { COLORS as C } from "../theme";
 // Category filter toggles. Desktop renders a vertical list inside the left card;
 // mobile renders a 2-column grid inside the bottom sheet. `onReset` is supplied
 // by App since the desktop and mobile reset behaviors differ.
-export default function FilterPanel({ isMobile, active, onToggleCategory, onReset }) {
+//
+// Desktop rows are reactive-tier: faint glow + bg lift on hover (<100ms), and
+// hovering a row pulses that category's satellites brighter on the globe for
+// ~1s via `onHoverCategory` — you feel which dots you're about to toggle.
+// `bare` skips the internal title so a CollapsibleSection can own the header.
+export default function FilterPanel({ isMobile, active, onToggleCategory, onReset, onHoverCategory, bare }) {
   const items = CATEGORIES.map(cat => {
     const on = active.includes(cat.id);
     const dimmed = !(active.length === 0 || on);
@@ -21,9 +26,12 @@ export default function FilterPanel({ isMobile, active, onToggleCategory, onRese
     }
     return (
       <div key={cat.id} onClick={() => onToggleCategory(cat.id)}
-        style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, cursor: "pointer", opacity: dimmed ? 0.4 : 1, transition: "opacity 0.2s" }}>
-        <div style={{ width: 36, height: 18, borderRadius: 9, background: on ? cat.color : C.toggleOff, border: `1px solid ${cat.color}`, transition: "background 0.2s", position: "relative" }}>
-          <div style={{ position: "absolute", top: 2, left: on ? 18 : 2, width: 12, height: 12, borderRadius: "50%", background: on ? C.bg : cat.color, transition: "left 0.2s" }} />
+        onMouseEnter={() => onHoverCategory && onHoverCategory(cat.id)}
+        onMouseLeave={() => onHoverCategory && onHoverCategory(null)}
+        className="hud-row hud-accent-row"
+        style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6, cursor: "pointer", opacity: dimmed ? 0.4 : 1, padding: "4px 6px", borderRadius: 3, color: cat.color }}>
+        <div style={{ width: 36, height: 18, borderRadius: 9, background: on ? cat.color : C.toggleOff, border: `1px solid ${cat.color}`, transition: "background 0.15s ease-out", position: "relative", flexShrink: 0 }}>
+          <div style={{ position: "absolute", top: 2, left: on ? 18 : 2, width: 12, height: 12, borderRadius: "50%", background: on ? C.bg : cat.color, transition: "left 0.15s ease-out" }} />
         </div>
         <div style={{ color: cat.color, fontSize: 12, letterSpacing: 1 }}>{cat.label}</div>
       </div>
@@ -44,11 +52,11 @@ export default function FilterPanel({ isMobile, active, onToggleCategory, onRese
 
   return (
     <>
-      <div style={{ color: C.cyan, fontSize: 11, letterSpacing: 3, marginBottom: 16, flexShrink: 0 }}>FILTER OBJECTS</div>
-      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 6 }}>
+      {!bare && <div style={{ color: C.cyan, fontSize: 11, letterSpacing: 3, marginBottom: 16, flexShrink: 0 }}>FILTER OBJECTS</div>}
+      <div style={{ flex: 1, overflowY: "auto", paddingBottom: 6, marginTop: bare ? 10 : 0 }}>
         {items}
         <div style={{ borderTop: `1px solid ${C.cyan}22`, marginTop: 8, paddingTop: 12 }}>
-          <div onClick={onReset} style={{ color: `${C.cyan}88`, fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
+          <div onClick={onReset} className="hud-press" style={{ color: `${C.cyan}88`, fontSize: 11, letterSpacing: 2, cursor: "pointer", textAlign: "center" }}>RESET FILTERS</div>
         </div>
       </div>
     </>
