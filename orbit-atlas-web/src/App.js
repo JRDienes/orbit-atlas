@@ -20,6 +20,11 @@ import FilterPanel from "./components/FilterPanel";
 import CountryCodesPanel from "./components/CountryCodesPanel";
 import SatelliteViewer from "./components/SatelliteViewer";
 import MobileObjectData from "./components/MobileObjectData";
+import CollapsibleSection from "./components/CollapsibleSection";
+import { MOTION } from "./fx/motionConfig";
+import { createAmbientFX } from "./fx/ambient";
+import { createAutoScan } from "./fx/autoScan";
+import "./hud.css";
 
 const supabase = createClient(
   process.env.REACT_APP_SUPABASE_URL,
@@ -69,6 +74,8 @@ export default function App() {
   // Keep the focused index valid as the derived scrub list changes.
   useEffect(() => { setFocusedIndex(i => Math.max(0, Math.min(i, focusedCodes.length - 1))); }, [focusedCodes.length]);
   const [selected, setSelected] = useState(null);
+  const selectedRef = useRef(null); // mirror for animation-loop reads (auto-scan gate)
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
   const [pinnedSats, setPinnedSats] = useState(new Set());
   const [pinnedViewIndex, setPinnedViewIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -82,6 +89,7 @@ export default function App() {
   // Only show welcome on first visit per session — refreshes skip it
   const isFirstVisitRef = useRef(!sessionStorage.getItem('orbit-welcomed'));
   const [issData, setIssData] = useState(null);
+  const [lastSync, setLastSync] = useState(null); // last successful data refresh (header SYNC stamp)
   const [issEnabled, setIssEnabled] = useState(true);
   const [issHover, setIssHover] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -115,6 +123,8 @@ export default function App() {
   const timelineYearRef = useRef(null);
   const timelineIntervalRef = useRef(null);
   const CURRENT_YEAR = new Date().getFullYear();
+  const tooltipRef = useRef(null); // cursor-following hover tooltip (imperative DOM)
+  const travelGlowRef = useRef(null); // traveling glow along the selected orbit
   const [isMobile, setIsMobile] = useState(computeIsMobile);
   const [wideHeader, setWideHeader] = useState(() => window.innerWidth > 600);
   const [mobileTab, setMobileTab] = useState(null);
@@ -170,6 +180,52 @@ export default function App() {
 
   // Keep mobileTabRef in sync so touch handlers can read current value
   useEffect(() => { mobileTabRef.current = mobileTab; }, [mobileTab]);
+
+  // ── Reactive: hover-pulse a satellite group on the globe ──────────────
+  // Hovering a filter row or code chip lerps that group's dot colors toward
+  // white for ~1s, then restores — a quick "these are mine" flash, never a
+  // permanent state. Writes the color buffer directly (no React re-render).
+  const pulseTimeoutRef = useRef(null);
+  const pulsedRef = useRef(null); // remembers what's lit so it can be restored
+  function setCategoryPulse(catId, code) {
+    if (!MOTION.reactive.enabled) return;
+    const { geo, satObjects } = pointsRef.current;
+    if (!geo || !satObjects) return;
+    const colors = geo.getAttribute("color");
+    const catRGBLocal = Object.fromEntries(CATEGORIES.map(cat => {
+      const cc = new THREE.Color(cat.color);
+      return [cat.id, [cc.r, cc.g, cc.b]];
+    }));
+    const restore = () => {
+      const prev = pulsedRef.current;
+      if (!prev) return;
+      pulsedRef.current = null;
+      for (const i of prev.indices) {
+        const s = satObjects[i];
+        const [r, g, b] = catRGBLocal[s.category] || [1, 1, 1];
+        colors.setXYZ(i, r, g, b);
+      }
+      colors.needsUpdate = true;
+    };
+    clearTimeout(pulseTimeoutRef.current);
+    restore();
+    if (!catId) return;
+    const indices = [];
+    satObjects.forEach((s, i) => {
+      if (s.category !== catId) return;
+      if (code && s.filterKey !== code) return;
+      if (s.timelineHidden) return; // hidden dots are parked at the origin
+      if (selected && s.norad_cat_id === selected.norad_cat_id) return; // keep the gold
+      // Lerp toward white — clearly brighter without changing hue identity
+      const [r, g, b] = catRGBLocal[s.category] || [1, 1, 1];
+      colors.setXYZ(i, r + (1 - r) * 0.75, g + (1 - g) * 0.75, b + (1 - b) * 0.75);
+      indices.push(i);
+    });
+    if (indices.length === 0) return;
+    colors.needsUpdate = true;
+    pulsedRef.current = { indices };
+    pulseTimeoutRef.current = setTimeout(restore, MOTION.reactive.categoryPulseMs);
+  }
 
   // Auto-open object tab when satellite selected on mobile
   useEffect(() => {
@@ -303,7 +359,8 @@ export default function App() {
     const renderer = new THREE.WebGLRenderer({ antialias: !mobileGpu, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobileGpu ? 1.5 : 2));
-    mountRef.current.appendChild(renderer.domElement);
+    const mountEl = mountRef.current; // stable handle for the effect cleanup
+    mountEl.appendChild(renderer.domElement);
 
     // Earth globe
     const earthGeo = new THREE.SphereGeometry(0.98, 64, 64);
@@ -338,6 +395,29 @@ export default function App() {
     const dirLight = new THREE.DirectionalLight(0x00d4ff, 1);
     dirLight.position.set(5, 3, 5);
     scene.add(dirLight);
+
+    // Ambient living layers — radar sweep, atmosphere breathing, one-at-a-time
+    // satellite glow. Quiet texture, staggered periods (see fx/ambient.js).
+    const ambientFX = createAmbientFX({
+      scene, earth, camera, atmosMat,
+      getSats: () => pointsRef.current?.satObjects,
+    });
+
+    // Auto-scan mode — after ~4s idle the globe surveys itself, locking a
+    // reticle onto one interesting satellite at a time (see fx/autoScan.js).
+    const autoScan = createAutoScan({
+      earth, wire, camera,
+      getSats: () => pointsRef.current?.satObjects,
+      getSelected: () => selectedRef.current,
+      isMobile: () => isMobileRef.current,
+    });
+    // ANY user input stops the scan instantly; it resumes after the idle timeout.
+    const onAnyInput = () => autoScan.notifyUserInput();
+    window.addEventListener("mousedown", onAnyInput);
+    window.addEventListener("mousemove", onAnyInput);
+    window.addEventListener("wheel", onAnyInput);
+    window.addEventListener("touchstart", onAnyInput);
+    window.addEventListener("keydown", onAnyInput);
 
 
     // Shared raycaster
@@ -374,6 +454,7 @@ export default function App() {
       dragMoved = false;
       prevMouse = { x: e.clientX, y: e.clientY };
       mouseDownPos = { x: e.clientX, y: e.clientY };
+      if (tooltipRef.current) tooltipRef.current.style.display = "none";
     };
     const onMouseUp = () => { isDragging = false; };
     const onMouseMove = e => {
@@ -412,10 +493,19 @@ export default function App() {
         pos.needsUpdate = true;
         hoverPoint.visible = true;
         document.body.style.cursor = "pointer";
+        // Cursor-following tooltip (reactive tier — instant, imperative DOM)
+        const tip = tooltipRef.current;
+        if (tip) {
+          tip.innerHTML = `<div>${(sat.object_name || "UNKNOWN")}</div><div class="hud-tooltip-sub">NORAD ${sat.norad_cat_id}${sat.apoapsis ? ` · ${Math.round(sat.apoapsis)} KM` : ""}</div>`;
+          tip.style.left = `${e.clientX + 14}px`;
+          tip.style.top = `${e.clientY + 12}px`;
+          tip.style.display = "block";
+        }
       } else {
         hoveredIdx = -1;
         hoverPoint.visible = false;
         document.body.style.cursor = "default";
+        if (tooltipRef.current) tooltipRef.current.style.display = "none";
       }
     };
 
@@ -508,16 +598,18 @@ export default function App() {
     window.addEventListener("touchmove", onTouchMove, { passive: false });
     window.addEventListener("touchend", onTouchEnd);
 
-    // Animation loop
+    // Animation loop — renderer.setAnimationLoop (not rAF/setInterval) so the
+    // loop is owned by the renderer and properly cancelled on unmount.
     const CHUNK = 3000;
+    let lastInfoLog = 0;
     const animate = () => {
-      requestAnimationFrame(animate);
-      // Fly-to ISS animation
+      // Fly-to animation (ISS toggle uses a gentle 0.06; clicking a satellite
+      // passes speed ~0.3 for a decisive ~200ms arc — cinematic, not slow)
       if (flyToISSRef.current) {
-        const { tx, ty } = flyToISSRef.current;
+        const { tx, ty, speed = 0.06 } = flyToISSRef.current;
         const lerpAngle = (a, b, t) => { let d = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI; return a + d * t; };
-        earth.rotation.x = lerpAngle(earth.rotation.x, tx, 0.06);
-        earth.rotation.y = lerpAngle(earth.rotation.y, ty, 0.06);
+        earth.rotation.x = lerpAngle(earth.rotation.x, tx, speed);
+        earth.rotation.y = lerpAngle(earth.rotation.y, ty, speed);
         wire.rotation.x = earth.rotation.x;
         wire.rotation.y = earth.rotation.y;
         const dxA = Math.abs(lerpAngle(earth.rotation.x, tx, 1));
@@ -594,9 +686,36 @@ export default function App() {
         }
       }
 
+      // Traveling glow sweeping the selected orbital path (~3.2s per lap)
+      const tg = travelGlowRef.current;
+      if (tg) {
+        const phase = (frameTime % 3200) / 3200;
+        const fIdx = phase * tg.n;
+        const i0 = Math.floor(fIdx) % tg.n;
+        const i1 = (i0 + 1) % tg.n;
+        const frac = fIdx - Math.floor(fIdx);
+        const p = tg.geo.getAttribute("position");
+        p.setXYZ(0,
+          tg.pts[i0 * 3] + (tg.pts[i1 * 3] - tg.pts[i0 * 3]) * frac,
+          tg.pts[i0 * 3 + 1] + (tg.pts[i1 * 3 + 1] - tg.pts[i0 * 3 + 1]) * frac,
+          tg.pts[i0 * 3 + 2] + (tg.pts[i1 * 3 + 2] - tg.pts[i0 * 3 + 2]) * frac);
+        p.needsUpdate = true;
+      }
+
+      // Ambient living layers (radar sweep / atmosphere breath / sat glow)
+      ambientFX.update(frameTime);
+      // Auto-scan state machine (focal tier — one annotated target at a time)
+      autoScan.update(frameTime);
+
       renderer.render(scene, camera);
+
+      // Perf guardrail: surface draw calls in dev (target < 15 at idle)
+      if (process.env.NODE_ENV === "development" && frameTime - lastInfoLog > 5000) {
+        lastInfoLog = frameTime;
+        console.log(`[perf] draw calls: ${renderer.info.render.calls}, triangles: ${renderer.info.render.triangles}`);
+      }
     };
-    animate();
+    renderer.setAnimationLoop(animate);
 
     // Resize handler
     const onResize = () => {
@@ -671,6 +790,7 @@ export default function App() {
         pointsRef.current = { geo, mat, satObjects, points };
 
         setVisibleCount(satObjects.length);
+        setLastSync(Date.now());
         worker.terminate();
         activeWorkerRef.current = null;
       };
@@ -743,6 +863,14 @@ export default function App() {
       }
       introTimeoutsRef.current.forEach(clearTimeout);
       introTimeoutsRef.current = [];
+      renderer.setAnimationLoop(null);
+      ambientFX.dispose();
+      autoScan.dispose();
+      window.removeEventListener("mousedown", onAnyInput);
+      window.removeEventListener("mousemove", onAnyInput);
+      window.removeEventListener("wheel", onAnyInput);
+      window.removeEventListener("touchstart", onAnyInput);
+      window.removeEventListener("keydown", onAnyInput);
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("mousemove", onMouseMove);
@@ -764,8 +892,8 @@ export default function App() {
       issFutureGeo.dispose();
       issFutureMesh.material.dispose();
       renderer.dispose();
-      if (mountRef.current && renderer.domElement.parentNode === mountRef.current) {
-        mountRef.current.removeChild(renderer.domElement);
+      if (mountEl && renderer.domElement.parentNode === mountEl) {
+        mountEl.removeChild(renderer.domElement);
       }
     };
   }, []);
@@ -822,11 +950,11 @@ export default function App() {
       const inPinSet = pinnedSats.size > 0 && pinnedSats.has(sat);
       const isSelected = !!selected && sat.norad_cat_id === selected.norad_cat_id;
 
-      // Hide sats that are pin/selection-excluded, not yet launched, or filtered
-      // out by the active category/code filters — no more dim grey dots.
+      // Hide sats that are pin-excluded, not yet launched, or filtered out by
+      // the active category/code filters — no more dim grey dots. Selecting a
+      // sat no longer hides the rest: they dim instead (focus, not isolation).
       const shouldHide =
         (pinnedSats.size > 0 && !inPinSet) ||
-        (pinnedSats.size === 0 && !!selected && !isSelected) ||
         (!inPinSet && !isSelected && !satVisible(sat));
 
       if (shouldHide || notYetLaunched) {
@@ -845,7 +973,9 @@ export default function App() {
         newColors.push(1, 0.95, 0.1); // bright gold
       } else {
         const [r, g, b] = catRGB[sat.category] || [1, 1, 1];
-        newColors.push(r, g, b);
+        // While a sat is selected, everything else recedes — focal hierarchy
+        const dim = (pinnedSats.size === 0 && !!selected) ? MOTION.select.dimOthers : 1;
+        newColors.push(r * dim, g * dim, b * dim);
       }
     });
     fullPosUpdateRef.current = true; // all dot positions changed — full upload next frame
@@ -1004,6 +1134,17 @@ export default function App() {
   // Keep pinnedSatsRef in sync for animation loop reads
   useEffect(() => { pinnedSatsRef.current = pinnedSats; }, [pinnedSats]);
 
+  // ── Select cinematic: arc the globe to the chosen satellite (~200ms) ──
+  // Same rotation math as the ISS fly-to but with a decisive lerp speed.
+  // The globe rotates — the camera never flies (panels keep their frame).
+  useEffect(() => {
+    if (!selected || isMobile) return;
+    const { x: xl, y: yl, z: zl } = selected;
+    if (xl == null) return;
+    const d = Math.sqrt(xl * xl + zl * zl);
+    flyToISSRef.current = { tx: -Math.atan2(yl, d) * 0.4, ty: Math.atan2(-xl, zl), speed: 0.3 };
+  }, [selected, isMobile]);
+
   // Hide ISS when timeline is set before its launch year (Zarya module: Nov 1998) or tracker is toggled off
   useEffect(() => {
     const hidden = !issEnabled || (timelineYear !== null && timelineYear < 1998);
@@ -1045,6 +1186,28 @@ export default function App() {
     line.renderOrder = 3;
     earth.add(line);
     isolatedOrbitRef.current = line;
+
+    // Traveling glow — a single bright point sweeping the selected orbit so
+    // the path reads as live telemetry, not a static ring (focal tier).
+    if (MOTION.select.travelGlow) {
+      const glowGeo = new THREE.BufferGeometry();
+      glowGeo.setAttribute("position", new THREE.Float32BufferAttribute([pts[0], pts[1], pts[2]], 3).setUsage(THREE.DynamicDrawUsage));
+      const glowMat = new THREE.PointsMaterial({ size: 0.02, color: catColor.clone().lerp(new THREE.Color(1, 1, 1), 0.6), sizeAttenuation: true, depthWrite: false, transparent: true, opacity: 0.9 });
+      const glowPt = new THREE.Points(glowGeo, glowMat);
+      glowPt.renderOrder = 3;
+      glowPt.frustumCulled = false;
+      earth.add(glowPt);
+      travelGlowRef.current = { pts, n: N, geo: glowGeo, mat: glowMat, mesh: glowPt };
+    }
+    return () => {
+      const tg = travelGlowRef.current;
+      if (tg) {
+        if (earthRef.current) earthRef.current.remove(tg.mesh);
+        tg.geo.dispose();
+        tg.mat.dispose();
+        travelGlowRef.current = null;
+      }
+    };
   }, [selected]);
 
   // ISS live tracking
@@ -1090,6 +1253,7 @@ export default function App() {
         const res = await fetch("https://api.wheretheiss.at/v1/satellites/25544");
         const d = await res.json();
         setIssData(d);
+        setLastSync(Date.now()); // drives the header SYNC stamp + icon ping
 
         const [x, y, z] = latLonToXYZ(d.latitude, d.longitude, d.altitude);
 
@@ -1167,11 +1331,14 @@ export default function App() {
       {/* Globe */}
       <div ref={mountRef} style={{ position: "absolute", inset: 0, touchAction: "none" }} />
 
+      {/* Satellite hover tooltip — positioned imperatively by the raycast */}
+      <div ref={tooltipRef} className="hud-tooltip" />
+
       {/* Welcome message — visible between loading screen and satellite fade-in */}
       {showWelcome && <WelcomeBanner isMobile={isMobile} visible={welcomeVisible && !welcomeExiting} />}
 
       {/* Header */}
-      <Header isMobile={isMobile} showObjectsLabel={wideHeader} loading={loading} visibleCount={visibleCount} onMenuClick={() => setAboutOpen(true)} onKeyClick={() => setGlobalKeyOpen(true)} />
+      <Header isMobile={isMobile} showObjectsLabel={wideHeader} loading={loading} visibleCount={visibleCount} lastSync={lastSync} onMenuClick={() => setAboutOpen(true)} onKeyClick={() => setGlobalKeyOpen(true)} />
 
       {/* About panel */}
       <About open={aboutOpen} onClose={() => setAboutOpen(false)} />
@@ -1185,30 +1352,37 @@ export default function App() {
       {/* ── DESKTOP LAYOUT ── */}
       {!isMobile && (
         <>
-          {/* Left panel — filter (top 70%) + country codes (bottom 30%) */}
-          <div onWheel={e => e.stopPropagation()} style={{ position: "absolute", top: 80, left: 20, width: 300, bottom: 150, background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* Left panel — filter (top 70%) + country codes (bottom 30%).
+              Each section is a collapsible instrument module: header bar stays,
+              content height-collapses in 180ms ease-out. */}
+          <div onWheel={e => e.stopPropagation()} className="hud-card" style={{ position: "absolute", top: 80, left: 20, width: 300, bottom: 150, background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-            {/* Top 70% — Filter Objects */}
-            <div style={{ flex: 7, minHeight: 0, display: "flex", flexDirection: "column", padding: "14px 14px 0" }}>
+            <CollapsibleSection title="FILTER OBJECTS" openFlex={7} style={{ padding: "14px 14px 0" }}>
               <FilterPanel
                 isMobile={false}
+                bare
                 active={active}
                 onToggleCategory={toggleCategory}
+                onHoverCategory={setCategoryPulse}
                 onReset={() => { setActive([]); setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedIndex(0); }}
               />
-            </div>
+            </CollapsibleSection>
 
-            {/* Bottom 30% — Country Codes */}
-            <div style={{ flex: 3, minHeight: 0, borderTop: `1px solid ${C.cyan}22`, display: "flex", flexDirection: "column", padding: "16px 14px" }}>
+            <div style={{ borderTop: `1px solid ${C.cyan}22`, flexShrink: 0 }} />
+
+            <CollapsibleSection title="COUNTRY CODES" openFlex={3} style={{ padding: "16px 14px" }}>
               <CountryCodesPanel
                 isMobile={false}
+                bare
                 active={active}
                 selectedCodes={selectedCodes}
                 sats={satsRef.current}
                 onToggleCode={toggleCode}
+                onToggleCategory={toggleCategory}
+                onHoverCategory={setCategoryPulse}
                 onReset={() => { setSelectedCodes([]); setPinnedSats(new Set()); setPinnedViewIndex(0); setSelected(null); setFocusedIndex(0); }}
               />
-            </div>
+            </CollapsibleSection>
 
           </div>
 
@@ -1232,7 +1406,7 @@ export default function App() {
           <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 10, alignItems: "stretch" }}>
 
             {/* Timeline */}
-            <div style={{ background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", minWidth: 240 }}>
+            <div className="hud-card" style={{ background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", minWidth: 240 }}>
               <TimelineControl
                 isMobile={false}
                 timelineYear={timelineYear}
@@ -1246,7 +1420,7 @@ export default function App() {
             </div>
 
             {/* Speed Control */}
-            <div style={{ background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", textAlign: "center", minWidth: 260 }}>
+            <div className="hud-card" style={{ background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", textAlign: "center", minWidth: 260 }}>
               <SpeedControl
                 isMobile={false}
                 timeScale={timeScale}
@@ -1299,6 +1473,7 @@ export default function App() {
                   selectedCodes={selectedCodes}
                   sats={satsRef.current}
                   onToggleCode={toggleCode}
+                  onToggleCategory={toggleCategory}
                   onReset={() => setSelectedCodes([])}
                 />
               )}

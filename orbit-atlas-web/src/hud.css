@@ -1,0 +1,120 @@
+/* ── HUD motion layer ─────────────────────────────────────────────────────
+   Shared keyframes + utility classes for the ambient/reactive animation
+   system. Discipline rules (see fx/motionConfig.js): ease-out or linear
+   only, reactive 120-180ms, ambient up to 400ms. `will-change` is applied
+   ONLY to frequently-animated elements via the .hud-gpu class — never to
+   static cards. */
+
+/* Quiet heartbeat for the LIVE dot — ambient tier, must never grab focus. */
+@keyframes hud-pulse {
+  0%   { opacity: 1;    transform: scale(1); }
+  50%  { opacity: 0.35; transform: scale(0.82); }
+  100% { opacity: 1;    transform: scale(1); }
+}
+
+/* One-shot ping for the DATA SYNC icon on refresh. */
+@keyframes hud-ping {
+  0%   { opacity: 0.9; transform: scale(1); }
+  100% { opacity: 0;   transform: scale(2.1); }
+}
+
+/* Staggered row entrance — pair with inline animation-delay (i * 20ms). */
+@keyframes hud-row-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.hud-row-in {
+  animation: hud-row-in 0.16s ease-out both;
+}
+
+/* Slow fade for rotating empty-state tips. */
+@keyframes hud-tip-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.hud-tip-in { animation: hud-tip-in 0.4s ease-out both; }
+
+/* Faint breathing for empty-state reticle hints — deliberately dim. */
+@keyframes hud-breathe {
+  0%   { opacity: 0.18; }
+  50%  { opacity: 0.42; }
+  100% { opacity: 0.18; }
+}
+
+/* Bar growth for the idle mini-dashboard (scaleX from 0, left-anchored). */
+@keyframes hud-bar-in {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+/* Reactive press state for buttons/chips — instant release. */
+.hud-press { transition: transform 0.12s ease-out, box-shadow 0.15s ease-out, background 0.15s ease-out, border-color 0.15s ease-out, opacity 0.15s ease-out; }
+.hud-press:active { transform: scale(0.97); }
+
+/* Hover lift for list/filter rows — faint glow + slight bg lift, <100ms. */
+.hud-row { transition: background 0.09s ease-out, box-shadow 0.09s ease-out, opacity 0.2s ease-out; }
+.hud-row:hover { background: rgba(0, 212, 255, 0.07); box-shadow: 0 0 10px rgba(0, 212, 255, 0.06) inset; }
+
+/* Table-row left-edge accent bar that slides in on hover. */
+.hud-accent-row { position: relative; }
+.hud-accent-row::before {
+  content: "";
+  position: absolute; left: 0; top: 15%; bottom: 15%; width: 2px;
+  background: currentColor; opacity: 0;
+  transform: scaleY(0.3); transform-origin: center;
+  transition: opacity 0.09s ease-out, transform 0.09s ease-out;
+}
+.hud-accent-row:hover::before { opacity: 0.7; transform: scaleY(1); }
+
+/* Panel collapse — height animates via grid-template-rows trick (no JS
+   measurement). 180ms ease-out per the motion discipline. */
+.hud-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.18s ease-out, opacity 0.18s ease-out;
+}
+.hud-collapse > * { overflow: hidden; min-height: 0; }
+.hud-collapse.hud-collapsed { grid-template-rows: 0fr; opacity: 0; }
+
+/* Chevron rotation for collapse toggles. */
+.hud-chevron { transition: transform 0.18s ease-out; display: inline-block; }
+.hud-chevron.hud-collapsed { transform: rotate(-90deg); }
+
+/* GPU hint — apply only to reticles, panels mid-animation, hover targets. */
+.hud-gpu { will-change: transform; }
+
+/* Stat/panel cards: border glow intensifies on hover — reactive tier. */
+.hud-card { transition: box-shadow 0.15s ease-out, border-color 0.15s ease-out; }
+.hud-card:hover { box-shadow: 0 0 18px rgba(0, 212, 255, 0.10); border-color: rgba(0, 212, 255, 0.4); }
+
+/* Cursor-following satellite tooltip — driven imperatively from the hover
+   raycast (no React re-render per mousemove). */
+.hud-tooltip {
+  position: fixed; z-index: 900; pointer-events: none; display: none;
+  background: rgba(2, 8, 24, 0.92); border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: 4px; padding: 4px 8px; font-size: 10px; letter-spacing: 1px;
+  color: #cde; white-space: nowrap; backdrop-filter: blur(6px);
+}
+.hud-tooltip .hud-tooltip-sub { color: rgba(0, 212, 255, 0.55); font-size: 9px; margin-top: 1px; }
+
+/* Auto-scan reticle: scale-in lock (150ms) + subtle continuous rotation. */
+@keyframes hud-reticle-in {
+  from { transform: translate(-50%, -50%) scale(1.8) rotate(20deg); opacity: 0; }
+  to   { transform: translate(-50%, -50%) scale(1) rotate(0deg);   opacity: 1; }
+}
+@keyframes hud-reticle-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+/* Single bracket pulse fired right after lock. */
+@keyframes hud-bracket-pulse {
+  0%   { opacity: 1; transform: scale(1); }
+  40%  { opacity: 0.4; transform: scale(1.12); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Respect users who opt out of motion. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-row-in, .hud-tip-in { animation: none; }
+  .hud-collapse, .hud-chevron, .hud-press, .hud-row { transition: none; }
+}
