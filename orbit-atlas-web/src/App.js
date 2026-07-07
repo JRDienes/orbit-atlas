@@ -904,7 +904,9 @@ export default function App() {
       // ISS halo ping
       const halo = issHaloRef.current;
       if (halo) {
-        const issVisible = issMarkerRef.current?.visible;
+        // Marker visibility alone isn't enough — off-Earth scopes hide the
+        // marker via its parent (earth), but the halo is scene-level.
+        const issVisible = issMarkerRef.current?.visible && earth.visible;
         halo.visible = !!issVisible;
         if (issVisible) {
           const attr = issMarkerRef.current.geometry.getAttribute("position");
