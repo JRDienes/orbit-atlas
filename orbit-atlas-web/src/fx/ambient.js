@@ -18,7 +18,7 @@ import { MOTION, prefersReducedMotion } from "./motionConfig";
 export function createAmbientFX({ scene, earth, camera, atmosMat, getSats }) {
   // OS-level reduced-motion preference: skip all ambient animation
   if (prefersReducedMotion()) {
-    return { update: () => {}, dispose: () => {} };
+    return { update: () => {}, setActive: () => {}, dispose: () => {} };
   }
   const cfg = MOTION.ambient;
   const disposables = [];
@@ -107,11 +107,19 @@ export function createAmbientFX({ scene, earth, camera, atmosMat, getSats }) {
     }
   }
 
+  // Hide the layer meshes when another scope (e.g. the Moon) is active
+  function setActive(active) {
+    if (!active) {
+      if (sweepMesh) sweepMesh.material.opacity = 0;
+      if (glowMesh) glowMesh.visible = false;
+    }
+  }
+
   function dispose() {
     if (sweepMesh) scene.remove(sweepMesh);
     if (glowMesh) scene.remove(glowMesh);
     disposables.forEach(d => d.dispose());
   }
 
-  return { update, dispose };
+  return { update, setActive, dispose };
 }

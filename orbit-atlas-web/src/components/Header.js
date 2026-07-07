@@ -2,16 +2,57 @@ import { useEffect, useState } from "react";
 import { COLORS as C } from "../theme";
 import { useUtcClock, useCountUp } from "../hooks/useHud";
 import { MOTION } from "../fx/motionConfig";
+import { BODY_MENU } from "../utils/bodies";
+
+// Centered body-navigation dropdown. The current body reads as a chip;
+// opening it lists every registered body (Earth, Moon, the whole solar
+// system, individual planets). Closes on selection or outside click.
+function BodyMenu({ scope, onScopeChange }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+  const current = BODY_MENU.find(b => b.id === scope)?.label || scope.toUpperCase();
+  return (
+    <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)" }} onClick={e => e.stopPropagation()}>
+      <div onClick={() => setOpen(o => !o)} className="hud-press"
+        style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none", border: `1px solid ${C.cyan}44`, borderRadius: 6, padding: "7px 14px", background: `${C.bg}aa`, backdropFilter: "blur(8px)", minWidth: 150, justifyContent: "center" }}>
+        <span style={{ color: C.cyan, fontSize: 11, letterSpacing: 2, fontWeight: "bold" }}>{current}</span>
+        <span className={`hud-chevron${open ? "" : " hud-collapsed"}`} style={{ color: `${C.cyan}88`, fontSize: 8 }}>▼</span>
+      </div>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", minWidth: 170, background: `${C.bg}f2`, border: `1px solid ${C.cyan}33`, borderRadius: 6, backdropFilter: "blur(12px)", overflow: "hidden", zIndex: 950 }}>
+          {BODY_MENU.map((b, i) => {
+            const on = scope === b.id;
+            return (
+              <div key={b.id} onClick={() => { onScopeChange(b.id); setOpen(false); }} className="hud-row hud-row-in"
+                style={{ padding: "8px 14px", fontSize: 10, letterSpacing: 2, fontWeight: on ? "bold" : "normal", cursor: "pointer", userSelect: "none", color: on ? C.bg : `${C.cyan}aa`, background: on ? C.cyan : "transparent", borderBottom: b.id === "solar" ? `1px solid ${C.cyan}22` : "none", animationDelay: `${i * 15}ms` }}>
+                {b.label}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Quiet always-moving header signals: LIVE pulse, ticking UTC clock, and a
 // DATA SYNC stamp that pings once when a refresh lands. These are ambient
 // tier — they confirm the system is alive without ever grabbing focus.
-function SystemStatus({ lastSync }) {
+function SystemStatus({ lastSync, simTime, onSyncTime }) {
   const utc = useUtcClock(MOTION.headerSignals);
   // Re-key the ping span on each sync so the one-shot animation replays.
   const [pingKey, setPingKey] = useState(0);
   useEffect(() => { if (lastSync) setPingKey(k => k + 1); }, [lastSync]);
   if (!MOTION.headerSignals) return null;
+
+  // When the sim clock has drifted from wall time (sun running at timeScale),
+  // the clock shows SIM time in gold with a SYNC chip to snap back to now.
+  const drifted = simTime != null;
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
@@ -20,9 +61,17 @@ function SystemStatus({ lastSync }) {
         <div style={{ width: 7, height: 7, borderRadius: "50%", background: C.green, boxShadow: `0 0 8px ${C.green}`, animation: "hud-pulse 2.2s ease-out infinite" }} />
         <span style={{ color: `${C.green}cc`, fontSize: 10, letterSpacing: 2, fontWeight: "bold" }}>LIVE</span>
       </div>
-      {/* UTC clock — ticks every second, monospace via global font */}
-      <div style={{ color: `${C.cyan}99`, fontSize: 12, letterSpacing: 1.5, fontVariantNumeric: "tabular-nums", minWidth: 96 }}>
-        {utc} UTC
+      {/* Clock — wall UTC normally; gold SIM time when the sim has drifted */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <div style={{ color: drifted ? `${C.gold}cc` : `${C.cyan}99`, fontSize: 12, letterSpacing: 1.5, fontVariantNumeric: "tabular-nums", minWidth: 96 }}>
+          {drifted ? `${new Date(simTime).toUTCString().slice(17, 25)} SIM` : `${utc} UTC`}
+        </div>
+        {drifted && onSyncTime && (
+          <span onClick={onSyncTime} title="Reset sim clock to real time" className="hud-press"
+            style={{ cursor: "pointer", color: C.gold, border: `1px solid ${C.gold}55`, borderRadius: 4, fontSize: 9, letterSpacing: 1, padding: "2px 7px", userSelect: "none" }}>
+            ⟲ SYNC
+          </span>
+        )}
       </div>
       {/* DATA SYNC — timestamp with a one-shot ring ping on refresh */}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -44,7 +93,7 @@ function SystemStatus({ lastSync }) {
 
 // Top header bar — logo (click to refresh), title, an "about" hamburger and a
 // "global key" button, system status signals, and the live object count.
-export default function Header({ isMobile, showObjectsLabel, loading, visibleCount, lastSync, onMenuClick, onKeyClick }) {
+export default function Header({ isMobile, showObjectsLabel, loading, visibleCount, lastSync, simTime, onSyncTime, onMenuClick, onKeyClick, realView, onToggleView, scope, onScopeChange }) {
   // Counter ticks up/down to its new value instead of snapping (400ms ease-out).
   const animatedCount = useCountUp(visibleCount);
   return (
@@ -74,11 +123,31 @@ export default function Header({ isMobile, showObjectsLabel, loading, visibleCou
           </svg>
           <span style={{ color: C.cyan, fontSize: isMobile ? 10 : 11, letterSpacing: 2, fontWeight: "bold" }}>KEY</span>
         </div>
+
+        {/* View toggle — tactical HUD globe vs natural blue-marble Earth */}
+        {onToggleView && (
+          <div onClick={onToggleView} title={realView ? "Switch to tactical view" : "Switch to realistic view"} className="hud-press"
+            style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", border: `1px solid ${realView ? C.green : `${C.cyan}44`}`, borderRadius: 6, padding: isMobile ? "5px 8px" : "6px 11px", background: realView ? `${C.green}14` : `${C.cyan}0e` }}>
+            <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke={realView ? C.green : C.cyan} strokeWidth="1.1">
+              <circle cx="6" cy="6" r="5" />
+              <ellipse cx="6" cy="6" rx="2.2" ry="5" />
+              <path d="M1.3 4.2 h9.4 M1.3 7.8 h9.4" />
+            </svg>
+            <span style={{ color: realView ? C.green : C.cyan, fontSize: isMobile ? 10 : 11, letterSpacing: 2, fontWeight: "bold" }}>{realView ? "REAL" : "TAC"}</span>
+          </div>
+        )}
+
       </div>
+
+      {/* Body dropdown — NASA-Eyes-style navigation, centered in the header.
+          One registry (utils/bodies.js) feeds this menu, the solar model,
+          and the individual planet views — add a body there and it appears
+          everywhere. Desktop only for now. */}
+      {!isMobile && onScopeChange && <BodyMenu scope={scope} onScopeChange={onScopeChange} />}
 
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 12 : 28 }}>
         {/* System status — desktop only; phones don't have the width */}
-        {!isMobile && <SystemStatus lastSync={lastSync} />}
+        {!isMobile && <SystemStatus lastSync={lastSync} simTime={simTime} onSyncTime={onSyncTime} />}
 
         {/* Live object count — large, bright, counts to its new value */}
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>

@@ -23,10 +23,11 @@ export const MOTION = {
   },
 
   // Ambient living layers — max 3 active by design (terminator omitted to
-  // honor that cap; the scene reads calmer without it).
+  // honor that cap). Radar sweep + atmosphere breathing are OFF per design
+  // review: the constant pulse off the Earth read as busy. Flip back here.
   ambient: {
-    radarSweep: { enabled: true, periodMs: 6000, maxScale: 2.4, baseOpacity: 0.16 },
-    atmosphereBreath: { enabled: true, periodMs: 7300, amplitude: 0.3 }, // ±30% of base opacity (0.035..0.065) — barely-there breathing
+    radarSweep: { enabled: false, periodMs: 6000, maxScale: 2.4, baseOpacity: 0.16 },
+    atmosphereBreath: { enabled: false, periodMs: 7300, amplitude: 0.3 }, // ±30% of base opacity when on
     satGlowCycle: { enabled: true, dwellMs: 8600, pulseMs: 2150 }, // one sat at a time
   },
 

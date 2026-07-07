@@ -21,15 +21,23 @@ import CountryCodesPanel from "./components/CountryCodesPanel";
 import SatelliteViewer from "./components/SatelliteViewer";
 import MobileObjectData from "./components/MobileObjectData";
 import CollapsibleSection from "./components/CollapsibleSection";
+import LocalTimePanel from "./components/LocalTimePanel";
+import LunarPanel from "./components/LunarPanel";
 import { MOTION } from "./fx/motionConfig";
 import { createAmbientFX } from "./fx/ambient";
 import { createAutoScan } from "./fx/autoScan";
+import { subsolarLocalDir, createRealEarthMaterial } from "./fx/realEarth";
+import { LUNAR_SITES, LUNAR_ORBITERS, lunarLatLonToXYZ } from "./utils/lunarData";
+import { PLANETS, TEX_BASE, planetLongitudeDeg } from "./utils/bodies";
 import "./hud.css";
 
-const supabase = createClient(
-  process.env.REACT_APP_SUPABASE_URL,
-  process.env.REACT_APP_SUPABASE_KEY
-);
+// Without credentials the app falls back to a synthetic demo catalog
+// (utils/demoCatalog.js) instead of crashing on a blank page — useful for
+// local preview when .env isn't set up.
+const HAS_SUPABASE = !!(process.env.REACT_APP_SUPABASE_URL && process.env.REACT_APP_SUPABASE_KEY);
+const supabase = HAS_SUPABASE
+  ? createClient(process.env.REACT_APP_SUPABASE_URL, process.env.REACT_APP_SUPABASE_KEY)
+  : null;
 
 const ISS_TRAIL_LEN = 18;
 const ISS_COLOR = new THREE.Color("#FFD700");
@@ -125,6 +133,85 @@ export default function App() {
   const CURRENT_YEAR = new Date().getFullYear();
   const tooltipRef = useRef(null); // cursor-following hover tooltip (imperative DOM)
   const travelGlowRef = useRef(null); // traveling glow along the selected orbit
+  // Realistic-view toggle: swaps the tactical dark/cyan globe for a natural
+  // blue-marble Earth (texture + lighting only — HUD and dots are untouched)
+  const [realView, setRealView] = useState(false);
+  const viewRefsRef = useRef(null); // scene objects the view toggle restyles
+  // Simulated clock driving the sun: advances at the same timeScale as the
+  // satellites (60× default → the terminator laps the Earth in 24 real
+  // minutes). SYNC resets it to actual now. simTime state surfaces the drift
+  // in the header (updated 1/s — the render loop only touches the ref).
+  const sunTimeRef = useRef(Date.now());
+  const [simTime, setSimTime] = useState(null);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const drift = Math.abs(sunTimeRef.current - Date.now());
+      setSimTime(drift > 120000 ? sunTimeRef.current : null); // show after 2 sim-drift minutes
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+  const syncSimTime = () => { sunTimeRef.current = Date.now(); setSimTime(null); };
+
+  // ── Scope tabs: EARTH | MOON (NASA-Eyes-style body switch) ────────────
+  // Selecting MOON swaps the centered globe: Earth (and every child — sats,
+  // ISS, orbit rings) hides, and a detailed Moon takes its place at the same
+  // framing, with landing-site markers and lunar orbiters. Drag/zoom/fly-to
+  // all operate on whichever body is active.
+  const [scope, setScope] = useState("earth");
+  const scopeRef = useRef("earth");
+  const zoomBoundsRef = useRef({ min: 1.5, max: 9 }); // per-scope wheel/pinch limits
+  const scopeZTargetRef = useRef(null);               // camera glide target on switch
+  useEffect(() => {
+    scopeRef.current = scope;
+    const v = viewRefsRef.current;
+    if (!v) return;
+    const onEarth = scope === "earth";
+    const onMoon = scope === "moon";
+    const onSolar = scope === "solar";
+    const planet = !onEarth && !onMoon && !onSolar ? PLANETS.find(p => p.id === scope) : null;
+    if (!onEarth) setSelected(null); // drop any satellite lock when leaving Earth
+    if (v.earth) v.earth.visible = onEarth;      // hides all Earth children too
+    if (v.wire) v.wire.visible = onEarth && !realViewRef.current;
+    if (v.atmos) v.atmos.visible = onEarth;      // only Earth gets the limb glow
+    if (v.moonGlobe) v.moonGlobe.visible = onMoon;
+    if (v.solarGroup) v.solarGroup.visible = onSolar;
+    if (v.genericGlobe) v.genericGlobe.visible = !!planet;
+    // Stars feel right everywhere except the tactical Earth HUD
+    if (v.stars) v.stars.visible = realViewRef.current || !onEarth;
+    if (v.dragTargetRef) v.dragTargetRef.current = onMoon ? v.moonGlobe : onSolar ? v.solarGroup : planet ? v.genericGlobe : v.earth;
+    zoomBoundsRef.current = onSolar ? { min: 6, max: 60 } : { min: 1.5, max: 9 };
+    scopeZTargetRef.current = onSolar ? 34 : 7;
+    // Individual planet view: flat color immediately, texture when cached/loaded
+    if (planet && v.genericGlobe) {
+      const mat = v.genericGlobe.material;
+      const cached = v.planetTexCache[planet.id];
+      mat.map = cached || null;
+      mat.color.set(cached ? 0xffffff : planet.color);
+      mat.needsUpdate = true;
+      if (!cached && planet.tex) {
+        new THREE.TextureLoader().load(TEX_BASE + planet.tex, (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          viewRefsRef.current.planetTexCache[planet.id] = tex;
+          if (scopeRef.current === planet.id) { mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true; }
+        }, undefined, () => {});
+      }
+    }
+    // Lazy-load the lunar surface texture on first visit
+    if (onMoon && v.moonGlobe && !v.moonTexTried) {
+      v.moonTexTried = true;
+      new THREE.TextureLoader().load(
+        "/moon.jpg", // drop a hi-res map into public/ to override
+        (tex) => { tex.colorSpace = THREE.SRGBColorSpace; v.moonGlobe.material.map = tex; v.moonGlobe.material.color.set(0xffffff); v.moonGlobe.material.needsUpdate = true; },
+        undefined,
+        () => new THREE.TextureLoader().load(
+          "https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/moon_1024.jpg",
+          (tex) => { tex.colorSpace = THREE.SRGBColorSpace; v.moonGlobe.material.map = tex; v.moonGlobe.material.color.set(0xffffff); v.moonGlobe.material.needsUpdate = true; },
+          undefined,
+          () => console.warn("[orbit-atlas] moon texture unavailable — using plain sphere")
+        )
+      );
+    }
+  }, [scope]);
   const [isMobile, setIsMobile] = useState(computeIsMobile);
   const [wideHeader, setWideHeader] = useState(() => window.innerWidth > 600);
   const [mobileTab, setMobileTab] = useState(null);
@@ -196,13 +283,18 @@ export default function App() {
       const cc = new THREE.Color(cat.color);
       return [cat.id, [cc.r, cc.g, cc.b]];
     }));
+    // Base color must match what the recolor pass wrote (REAL view desaturates)
+    const baseRGB = (s) => {
+      let [r, g, b] = catRGBLocal[s.category] || [1, 1, 1];
+      if (realViewRef.current) { r += (1 - r) * 0.8; g += (1 - g) * 0.8; b += (1 - b) * 0.8; }
+      return [r, g, b];
+    };
     const restore = () => {
       const prev = pulsedRef.current;
       if (!prev) return;
       pulsedRef.current = null;
       for (const i of prev.indices) {
-        const s = satObjects[i];
-        const [r, g, b] = catRGBLocal[s.category] || [1, 1, 1];
+        const [r, g, b] = baseRGB(satObjects[i]);
         colors.setXYZ(i, r, g, b);
       }
       colors.needsUpdate = true;
@@ -217,7 +309,7 @@ export default function App() {
       if (s.timelineHidden) return; // hidden dots are parked at the origin
       if (selected && s.norad_cat_id === selected.norad_cat_id) return; // keep the gold
       // Lerp toward white — clearly brighter without changing hue identity
-      const [r, g, b] = catRGBLocal[s.category] || [1, 1, 1];
+      const [r, g, b] = baseRGB(s);
       colors.setXYZ(i, r + (1 - r) * 0.75, g + (1 - g) * 0.75, b + (1 - b) * 0.75);
       indices.push(i);
     });
@@ -388,13 +480,130 @@ export default function App() {
     const atmosMat = new THREE.MeshPhongMaterial({
       color: 0x00d4ff, transparent: true, opacity: 0.05, side: THREE.FrontSide
     });
-    scene.add(new THREE.Mesh(atmosGeo, atmosMat));
+    const atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
+    scene.add(atmosMesh);
 
     // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.3));
     const dirLight = new THREE.DirectionalLight(0x00d4ff, 1);
     dirLight.position.set(5, 3, 5);
     scene.add(dirLight);
+
+    // Starfield — REAL view only. One reused Points sphere, far behind orbits.
+    const starGeo = new THREE.BufferGeometry();
+    const starPos = new Float32Array(900 * 3);
+    for (let i = 0; i < 900; i++) {
+      // Uniform direction sampling so stars don't cluster at the poles
+      const u = Math.random() * 2 - 1, ph = Math.random() * Math.PI * 2;
+      const rr = Math.sqrt(1 - u * u);
+      starPos[i * 3] = rr * Math.cos(ph) * 90;
+      starPos[i * 3 + 1] = u * 90;
+      starPos[i * 3 + 2] = rr * Math.sin(ph) * 90;
+    }
+    starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.3, sizeAttenuation: false, transparent: true, opacity: 0.55, depthWrite: false });
+    const stars = new THREE.Points(starGeo, starMat);
+    stars.visible = false;
+    scene.add(stars);
+
+    // ── MOON scope: detailed lunar globe at Earth's framing ──────────────
+    // Hidden until the MOON tab is selected. Same radius as Earth's globe so
+    // the camera, drag, and zoom feel identical when the body switches.
+    const moonGeo = new THREE.SphereGeometry(0.98, 64, 64);
+    const moonMat = new THREE.MeshPhongMaterial({ color: 0x9a9a94, shininess: 2 });
+    const moonGlobe = new THREE.Mesh(moonGeo, moonMat);
+    moonGlobe.visible = false;
+    scene.add(moonGlobe);
+
+    // Landing-site markers — one Points cloud, child of the moon globe so
+    // they ride its rotation. Hover raycast resolves the site for a tooltip.
+    const sitePosArr = new Float32Array(LUNAR_SITES.length * 3);
+    LUNAR_SITES.forEach((s, i) => {
+      const [x, y, z] = lunarLatLonToXYZ(s.lat, s.lon, 0.985);
+      sitePosArr[i * 3] = x; sitePosArr[i * 3 + 1] = y; sitePosArr[i * 3 + 2] = z;
+    });
+    const siteGeo = new THREE.BufferGeometry();
+    siteGeo.setAttribute("position", new THREE.BufferAttribute(sitePosArr, 3));
+    const siteMat = new THREE.PointsMaterial({ size: 0.028, color: 0x00ff88, sizeAttenuation: true, depthWrite: false });
+    const sitePoints = new THREE.Points(siteGeo, siteMat);
+    sitePoints.renderOrder = 2;
+    moonGlobe.add(sitePoints);
+
+    // Lunar orbiters — ring + animated dot per spacecraft, children of the
+    // moon globe. Altitudes scale off the 1737 km lunar radius.
+    const lunarSats = LUNAR_ORBITERS.map(o => {
+      const r = 0.98 * (1 + o.alt / 1737) + 0.03; // small visual lift so rings clear the surface
+      const inc = (o.inclination * Math.PI) / 180;
+      const ringPts = [];
+      for (let j = 0; j <= 96; j++) {
+        const th = (j / 96) * Math.PI * 2;
+        ringPts.push(r * Math.cos(th), r * Math.sin(th) * Math.sin(inc), r * Math.sin(th) * Math.cos(inc));
+      }
+      const ringGeo = new THREE.BufferGeometry();
+      ringGeo.setAttribute("position", new THREE.Float32BufferAttribute(ringPts, 3));
+      const ring = new THREE.Line(ringGeo, new THREE.LineBasicMaterial({ color: new THREE.Color(o.color), transparent: true, opacity: 0.35 }));
+      moonGlobe.add(ring);
+      const dotGeo = new THREE.BufferGeometry();
+      dotGeo.setAttribute("position", new THREE.Float32BufferAttribute([r, 0, 0], 3).setUsage(THREE.DynamicDrawUsage));
+      const dot = new THREE.Points(dotGeo, new THREE.PointsMaterial({ size: 0.022, color: new THREE.Color(o.color), sizeAttenuation: true, depthWrite: false }));
+      dot.renderOrder = 2;
+      moonGlobe.add(dot);
+      return { ...o, r, inc, theta: Math.random() * Math.PI * 2, dotGeo, ring, dot };
+    });
+
+    // ── SOLAR scope: stylized model of the whole system ──────────────────
+    // Sun at origin, planets on circular orbit rings at their REAL mean
+    // longitudes for the sim date (the arrangement matches the actual sky).
+    // Distances/sizes are compressed — see utils/bodies.js. Clicking a
+    // planet navigates to that body's individual view.
+    const solarGroup = new THREE.Group();
+    solarGroup.visible = false;
+    solarGroup.rotation.x = 0.45; // pleasant 3/4 viewing tilt
+    scene.add(solarGroup);
+    const sunGeo = new THREE.SphereGeometry(1.15, 48, 48);
+    const sunMat = new THREE.MeshBasicMaterial({ color: 0xffbb33 });
+    solarGroup.add(new THREE.Mesh(sunGeo, sunMat));
+    const sunLight = new THREE.PointLight(0xfff2dd, 1.6, 0, 0);
+    solarGroup.add(sunLight); // only lights while the group is visible
+    const planetMeshes = PLANETS.map(p => {
+      const ringPts = [];
+      for (let j = 0; j <= 128; j++) {
+        const th = (j / 128) * Math.PI * 2;
+        ringPts.push(p.dist * Math.cos(th), 0, p.dist * Math.sin(th));
+      }
+      const orbGeo = new THREE.BufferGeometry();
+      orbGeo.setAttribute("position", new THREE.Float32BufferAttribute(ringPts, 3));
+      const orb = new THREE.Line(orbGeo, new THREE.LineBasicMaterial({ color: 0x335577, transparent: true, opacity: 0.5 }));
+      solarGroup.add(orb);
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(p.size, 32, 32),
+        new THREE.MeshPhongMaterial({ color: p.color, shininess: 6 })
+      );
+      mesh.userData.bodyId = p.id;
+      solarGroup.add(mesh);
+      if (p.id === "saturn") {
+        const sr = new THREE.Mesh(
+          new THREE.RingGeometry(p.size * 1.3, p.size * 2.1, 48),
+          new THREE.MeshBasicMaterial({ color: 0xcdb98a, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+        );
+        sr.rotation.x = Math.PI / 2 - 0.35;
+        sr.userData.bodyId = p.id;
+        mesh.add(sr);
+      }
+      return { p, mesh, orb };
+    });
+
+    // Generic globe reused by every individual planet view (texture cached
+    // per body; flat color until it streams in).
+    const genericGlobe = new THREE.Mesh(
+      new THREE.SphereGeometry(0.98, 64, 64),
+      new THREE.MeshPhongMaterial({ color: 0x888888, shininess: 4 })
+    );
+    genericGlobe.visible = false;
+    scene.add(genericGlobe);
+
+    // Expose the restylable scene objects to the view/scope toggles
+    viewRefsRef.current = { earth, earthMat, wire, wireMat, atmos: atmosMesh, atmosMat, dirLight, stars, moonGlobe, sitePoints, lunarSats, solarGroup, planetMeshes, genericGlobe, planetTexCache: {}, moonTexTried: false, dragTargetRef: { current: earth }, realMat: null, loadingReal: false, sunLocal: null, lastSunCalc: 0 };
 
     // Ambient living layers — radar sweep, atmosphere breathing, one-at-a-time
     // satellite glow. Quiet texture, staggered periods (see fx/ambient.js).
@@ -426,6 +635,7 @@ export default function App() {
 
     // Hover highlight — single point updated on mousemove
     let hoveredIdx = -1;
+    let hoveredPlanetId = null; // solar scope: planet under the cursor
     let lastHoverTime = 0; // throttle hover raycasts to ~30/s
     const hoverGeo = new THREE.BufferGeometry();
     hoverGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
@@ -464,8 +674,10 @@ export default function App() {
         const dx = e.clientX - prevMouse.x;
         const dy = e.clientY - prevMouse.y;
         if (Math.abs(e.clientX - mouseDownPos.x) > 4 || Math.abs(e.clientY - mouseDownPos.y) > 4) dragMoved = true;
-        earth.rotation.y += dx * 0.005;
-        earth.rotation.x += dy * 0.005;
+        // Rotate whichever body is active (Earth or the Moon)
+        const body = viewRefsRef.current?.dragTargetRef.current || earth;
+        body.rotation.y += dx * 0.005;
+        body.rotation.x += dy * 0.005;
         wire.rotation.y = earth.rotation.y;
         wire.rotation.x = earth.rotation.x;
         prevMouse = { x: e.clientX, y: e.clientY };
@@ -476,12 +688,59 @@ export default function App() {
       const nowH = performance.now();
       if (nowH - lastHoverTime < 32) return;
       lastHoverTime = nowH;
-      const { points, satObjects } = pointsRef.current;
-      if (!points || !satObjects) return;
       const mouse = new THREE.Vector2(
         (e.clientX / window.innerWidth) * 2 - 1,
         -(e.clientY / window.innerHeight) * 2 + 1
       );
+      // SOLAR scope: hover resolves planets; click navigates to that body
+      if (scopeRef.current === "solar") {
+        hoveredIdx = -1;
+        hoverPoint.visible = false;
+        const v = viewRefsRef.current;
+        const tip = tooltipRef.current;
+        if (!v?.planetMeshes || !tip) return;
+        raycaster.setFromCamera(mouse, camera);
+        const hits = raycaster.intersectObjects(v.planetMeshes.map(x => x.mesh), true);
+        const bodyId = hits.length ? (hits[0].object.userData.bodyId || hits[0].object.parent?.userData.bodyId) : null;
+        if (bodyId) {
+          hoveredPlanetId = bodyId;
+          const p = PLANETS.find(pl => pl.id === bodyId);
+          tip.innerHTML = `<div>${p.label}</div><div class="hud-tooltip-sub">CLICK TO VISIT</div>`;
+          tip.style.left = `${e.clientX + 14}px`;
+          tip.style.top = `${e.clientY + 12}px`;
+          tip.style.display = "block";
+          document.body.style.cursor = "pointer";
+        } else {
+          hoveredPlanetId = null;
+          tip.style.display = "none";
+          document.body.style.cursor = "default";
+        }
+        return;
+      }
+      // MOON scope: hover resolves landing sites instead of satellites
+      if (scopeRef.current === "moon") {
+        hoveredIdx = -1; // never carry a stale satellite hover across scopes
+        hoverPoint.visible = false;
+        const sp = viewRefsRef.current?.sitePoints;
+        const tip = tooltipRef.current;
+        if (!sp || !tip) return;
+        raycaster.setFromCamera(mouse, camera);
+        const sHits = raycaster.intersectObject(sp);
+        if (sHits.length > 0) {
+          const site = LUNAR_SITES[sHits[0].index];
+          tip.innerHTML = `<div>${site.name}</div><div class="hud-tooltip-sub">${site.org} · ${site.year} · ${site.type}</div>`;
+          tip.style.left = `${e.clientX + 14}px`;
+          tip.style.top = `${e.clientY + 12}px`;
+          tip.style.display = "block";
+          document.body.style.cursor = "pointer";
+        } else {
+          tip.style.display = "none";
+          document.body.style.cursor = "default";
+        }
+        return;
+      }
+      const { points, satObjects } = pointsRef.current;
+      if (!points || !satObjects) return;
       raycaster.setFromCamera(mouse, camera);
       const hits = raycaster.intersectObject(points);
       if (hits.length > 0) {
@@ -516,6 +775,12 @@ export default function App() {
       if (Date.now() - lastTouchTime < 600) return;
       if (dragMoved) return;
       if (e.target !== renderer.domElement) return;
+      // Solar scope: clicking a planet navigates to its individual view
+      if (scopeRef.current === "solar") {
+        if (hoveredPlanetId) setScope(hoveredPlanetId);
+        return;
+      }
+      if (scopeRef.current !== "earth") return;
       if (hoveredIdx >= 0) {
         const { satObjects } = pointsRef.current;
         if (satObjects) setSelected(satObjects[hoveredIdx]);
@@ -529,8 +794,12 @@ export default function App() {
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("click", onClick);
 
-    // Zoom
-    const onWheel = e => { camera.position.z = Math.min(9, Math.max(1.5, camera.position.z + e.deltaY * 0.005)); };
+    // Zoom — bounds depend on the active scope (solar view sits much farther out)
+    const onWheel = e => {
+      scopeZTargetRef.current = null; // user takes over from any glide
+      const b = zoomBoundsRef.current;
+      camera.position.z = Math.min(b.max, Math.max(b.min, camera.position.z + e.deltaY * 0.005 * (camera.position.z / 5)));
+    };
     window.addEventListener("wheel", onWheel);
 
     // Touch — drag to rotate, pinch to zoom, tap to select
@@ -573,8 +842,9 @@ export default function App() {
         const dx = e.touches[0].clientX - prevMouse.x;
         const dy = e.touches[0].clientY - prevMouse.y;
         if (Math.abs(e.touches[0].clientX - mouseDownPos.x) > 4 || Math.abs(e.touches[0].clientY - mouseDownPos.y) > 4) dragMoved = true;
-        earth.rotation.y += dx * 0.005;
-        earth.rotation.x += dy * 0.005;
+        const body = viewRefsRef.current?.dragTargetRef.current || earth;
+        body.rotation.y += dx * 0.005;
+        body.rotation.x += dy * 0.005;
         wire.rotation.y = earth.rotation.y;
         wire.rotation.x = earth.rotation.x;
         prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -582,7 +852,8 @@ export default function App() {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        camera.position.z = Math.min(9, Math.max(1.5, camera.position.z - (dist - lastTouchDist) * 0.01));
+        const b = zoomBoundsRef.current;
+        camera.position.z = Math.min(b.max, Math.max(b.min, camera.position.z - (dist - lastTouchDist) * 0.01));
         lastTouchDist = dist;
       }
     };
@@ -603,17 +874,24 @@ export default function App() {
     const CHUNK = 3000;
     let lastInfoLog = 0;
     const animate = () => {
+      // Camera glide when the scope switches framing (e.g. into solar view)
+      if (scopeZTargetRef.current != null) {
+        camera.position.z += (scopeZTargetRef.current - camera.position.z) * 0.1;
+        if (Math.abs(camera.position.z - scopeZTargetRef.current) < 0.05) scopeZTargetRef.current = null;
+      }
       // Fly-to animation (ISS toggle uses a gentle 0.06; clicking a satellite
       // passes speed ~0.3 for a decisive ~200ms arc — cinematic, not slow)
       if (flyToISSRef.current) {
         const { tx, ty, speed = 0.06 } = flyToISSRef.current;
         const lerpAngle = (a, b, t) => { let d = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI; return a + d * t; };
-        earth.rotation.x = lerpAngle(earth.rotation.x, tx, speed);
-        earth.rotation.y = lerpAngle(earth.rotation.y, ty, speed);
+        // Rotate the active body (Earth, or the Moon when flying to a site)
+        const body = viewRefsRef.current?.dragTargetRef.current || earth;
+        body.rotation.x = lerpAngle(body.rotation.x, tx, speed);
+        body.rotation.y = lerpAngle(body.rotation.y, ty, speed);
         wire.rotation.x = earth.rotation.x;
         wire.rotation.y = earth.rotation.y;
-        const dxA = Math.abs(lerpAngle(earth.rotation.x, tx, 1));
-        const dyA = Math.abs(lerpAngle(earth.rotation.y, ty, 1));
+        const dxA = Math.abs(lerpAngle(body.rotation.x, tx, 1));
+        const dyA = Math.abs(lerpAngle(body.rotation.y, ty, 1));
         if (dxA < 0.001 && dyA < 0.001) flyToISSRef.current = null;
       } else if (!isDragging) {
         earth.rotation.y += 0.0000012 * timeScaleRef.current;
@@ -702,10 +980,46 @@ export default function App() {
         p.needsUpdate = true;
       }
 
-      // Ambient living layers (radar sweep / atmosphere breath / sat glow)
-      ambientFX.update(frameTime);
-      // Auto-scan state machine (focal tier — one annotated target at a time)
-      autoScan.update(frameTime);
+      // Realistic view: the sun follows the SIM clock — it advances at the
+      // same timeScale as the satellites (dt is already sim-milliseconds), so
+      // speeding up the sim visibly sweeps the terminator around the globe.
+      // The world-space direction follows the globe's rotation every frame so
+      // day/night stays glued to the right geography while dragging.
+      sunTimeRef.current += dt;
+      const vr = viewRefsRef.current;
+      if (realViewRef.current && vr?.realMat) {
+        if (!vr.sunLocal) vr.sunLocal = new THREE.Vector3();
+        subsolarLocalDir(new Date(sunTimeRef.current), vr.sunLocal);
+        const sunW = vr.realMat.uniforms.sunDir.value;
+        sunW.copy(vr.sunLocal).applyQuaternion(earth.quaternion);
+        dirLight.position.copy(sunW).multiplyScalar(5); // atmosphere shading follows
+      }
+      // SOLAR scope: place each planet at its mean longitude for the sim date
+      if (scopeRef.current === "solar" && vr?.planetMeshes) {
+        for (const { p, mesh } of vr.planetMeshes) {
+          const lon = (planetLongitudeDeg(p, sunTimeRef.current) * Math.PI) / 180;
+          mesh.position.set(p.dist * Math.cos(lon), 0, -p.dist * Math.sin(lon));
+        }
+      }
+
+      // MOON scope: advance the lunar orbiters along their rings (sim time)
+      if (scopeRef.current === "moon" && vr?.lunarSats && dt > 0) {
+        for (const o of vr.lunarSats) {
+          o.theta += (2 * Math.PI / (o.period * 60 * 1000)) * dt;
+          const p = o.dotGeo.getAttribute("position");
+          p.setXYZ(0, o.r * Math.cos(o.theta), o.r * Math.sin(o.theta) * Math.sin(o.inc), o.r * Math.sin(o.theta) * Math.cos(o.inc));
+          p.needsUpdate = true;
+        }
+      }
+
+      // Ambient living layers + auto-scan are Earth-scope systems
+      if (scopeRef.current === "earth") {
+        ambientFX.update(frameTime);
+        autoScan.update(frameTime);
+      } else {
+        ambientFX.setActive(false);
+        autoScan.notifyUserInput(); // keeps the scan parked while on the Moon
+      }
 
       renderer.render(scene, camera);
 
@@ -725,8 +1039,36 @@ export default function App() {
     };
     window.addEventListener("resize", onResize);
 
-    // Load satellites from Supabase
+    // Load satellites from Supabase (or the demo catalog when no .env)
     async function loadSats() {
+      // No credentials → synthesize a realistic catalog so the app still runs
+      if (!supabase) {
+        console.warn("[orbit-atlas] No Supabase credentials in .env — using synthetic demo catalog.");
+        const { generateDemoCatalog } = await import("./utils/demoCatalog");
+        const worker = new Worker(new URL("./satWorker.js", import.meta.url));
+        activeWorkerRef.current = worker;
+        worker.onmessage = ({ data: { posArr, colArr, satObjects } }) => {
+          satsRef.current = satObjects;
+          const geo = new THREE.BufferGeometry();
+          const posAttr = new THREE.Float32BufferAttribute(posArr, 3);
+          posAttr.setUsage(THREE.DynamicDrawUsage);
+          geo.setAttribute("position", posAttr);
+          geo.setAttribute("color", new THREE.Float32BufferAttribute(colArr, 3));
+          const mat = new THREE.PointsMaterial({ size: 0.008, vertexColors: true, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, depthTest: true });
+          const points = new THREE.Points(geo, mat);
+          points.frustumCulled = false;
+          points.renderOrder = 1;
+          earth.add(points);
+          pointsRef.current = { geo, mat, satObjects, points };
+          setVisibleCount(satObjects.length);
+          setLastSync(Date.now());
+          worker.terminate();
+          activeWorkerRef.current = null;
+        };
+        worker.onerror = (e) => { console.error("satWorker error:", e); setLoading(false); };
+        worker.postMessage({ sats: generateDemoCatalog() });
+        return;
+      }
       const pageSize = 1000;
       // TLE lines omitted on purpose — they were ~70% of the payload. Positions are
       // placed via Keplerian elements in the worker; the ISS fetches its own TLE.
@@ -866,6 +1208,27 @@ export default function App() {
       renderer.setAnimationLoop(null);
       ambientFX.dispose();
       autoScan.dispose();
+      starGeo.dispose();
+      starMat.dispose();
+      moonGeo.dispose();
+      moonMat.dispose();
+      siteGeo.dispose();
+      siteMat.dispose();
+      lunarSats.forEach(o => {
+        o.ring.geometry.dispose(); o.ring.material.dispose();
+        o.dotGeo.dispose(); o.dot.material.dispose();
+      });
+      sunGeo.dispose();
+      sunMat.dispose();
+      planetMeshes.forEach(({ mesh, orb }) => {
+        mesh.geometry.dispose(); mesh.material.dispose();
+        mesh.children.forEach(c => { c.geometry?.dispose(); c.material?.dispose(); });
+        orb.geometry.dispose(); orb.material.dispose();
+      });
+      genericGlobe.geometry.dispose();
+      genericGlobe.material.dispose();
+      Object.values(viewRefsRef.current?.planetTexCache || {}).forEach(t => t.dispose());
+      if (viewRefsRef.current?.realMat) viewRefsRef.current.realMat.dispose();
       window.removeEventListener("mousedown", onAnyInput);
       window.removeEventListener("mousemove", onAnyInput);
       window.removeEventListener("wheel", onAnyInput);
@@ -972,7 +1335,10 @@ export default function App() {
       if (isSelected) {
         newColors.push(1, 0.95, 0.1); // bright gold
       } else {
-        const [r, g, b] = catRGB[sat.category] || [1, 1, 1];
+        let [r, g, b] = catRGB[sat.category] || [1, 1, 1];
+        // REAL view: category colors fight the realism — sats become
+        // near-white specks (a hint of hue survives for the legend)
+        if (realView) { r += (1 - r) * 0.8; g += (1 - g) * 0.8; b += (1 - b) * 0.8; }
         // While a sat is selected, everything else recedes — focal hierarchy
         const dim = (pinnedSats.size === 0 && !!selected) ? MOTION.select.dimOthers : 1;
         newColors.push(r * dim, g * dim, b * dim);
@@ -1015,6 +1381,7 @@ export default function App() {
       if (catSats.length === 0) return;
 
       const catColor = new THREE.Color(CATEGORIES.find(c => c.id === catId)?.color || "#ffffff");
+      if (realView) catColor.lerp(new THREE.Color(1, 1, 1), 0.7); // desaturate rings in REAL view
 
       // Sample evenly when category has more sats than MAX_ORBITS
       const step = Math.max(1, Math.floor(catSats.length / MAX_ORBITS));
@@ -1073,7 +1440,7 @@ export default function App() {
       earth.add(orbitLines);
       shellsRef.current.push(orbitLines);
     });
-  }, [active, selectedCodes, timelineYear, selected, pinnedSats]);
+  }, [active, selectedCodes, timelineYear, selected, pinnedSats, realView]);
 
   // Pinned-satellite orbit rings — isolated from the main filter effect so cycling
   // the ‹ › arrows (pinnedViewIndex) only redraws these few rings, not all 21k dots.
@@ -1133,6 +1500,61 @@ export default function App() {
 
   // Keep pinnedSatsRef in sync for animation loop reads
   useEffect(() => { pinnedSatsRef.current = pinnedSats; }, [pinnedSats]);
+
+  // ── Realistic view toggle ──────────────────────────────────────────────
+  // TACTICAL (default): dark map, cyan wireframe + lighting — the HUD look.
+  // REALISTIC: day/night shader lit from the sun's ACTUAL position for the
+  // current UTC time — city lights glow on the night side, the terminator
+  // sits on the correct geography, and a faint starfield replaces the HUD
+  // blue. Textures load lazily on first use: local /earth-real.jpg and
+  // /earth-night.jpg win if present (drop your own into public/), else CDN
+  // copies; if loading fails we quietly stay on the tactical map.
+  const realViewRef = useRef(false);
+  useEffect(() => {
+    realViewRef.current = realView;
+    const v = viewRefsRef.current;
+    const earth = earthRef.current;
+    if (!v || !earth) return;
+    if (realView) {
+      if (v.realMat) {
+        earth.material = v.realMat;
+      } else if (!v.loadingReal) {
+        v.loadingReal = true;
+        const loader = new THREE.TextureLoader();
+        const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+        const dayP = load("/earth-real.jpg").catch(() => load("https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg"));
+        const nightP = load("/earth-night.jpg").catch(() => load("https://unpkg.com/three-globe/example/img/earth-night.jpg"));
+        Promise.all([dayP, nightP]).then(([day, night]) => {
+          day.colorSpace = THREE.SRGBColorSpace;
+          night.colorSpace = THREE.SRGBColorSpace;
+          v.realMat = createRealEarthMaterial(day, night);
+          v.sunLocal = subsolarLocalDir();
+          v.lastSunCalc = 0;
+          if (realViewRef.current && earthRef.current) earthRef.current.material = v.realMat;
+        }).catch(() => {
+          v.loadingReal = false;
+          console.warn("[orbit-atlas] realistic textures unavailable — staying on tactical map");
+        });
+      }
+      v.wire.visible = false;
+      v.stars.visible = true;
+      v.dirLight.color.set(0xffffff);
+      v.atmosMat.color.set(0x5588cc);
+    } else {
+      earth.material = v.earthMat; // original tactical phong material
+      v.wire.visible = scopeRef.current === "earth";
+      v.stars.visible = scopeRef.current !== "earth"; // stars stay for other bodies
+      v.dirLight.color.set(0x00d4ff);
+      v.atmosMat.color.set(0x00d4ff);
+    }
+  }, [realView]);
+
+  // Fly the moon globe to a landing site (same arc mechanism as satellites)
+  function flyToSite(site) {
+    const [xl, yl, zl] = lunarLatLonToXYZ(site.lat, site.lon, 0.985);
+    const d = Math.sqrt(xl * xl + zl * zl);
+    flyToISSRef.current = { tx: -Math.atan2(yl, d) * 0.8, ty: Math.atan2(-xl, zl), speed: 0.18 };
+  }
 
   // ── Select cinematic: arc the globe to the chosen satellite (~200ms) ──
   // Same rotation math as the ISS fly-to but with a decisive lerp speed.
@@ -1237,6 +1659,7 @@ export default function App() {
     }
 
     async function fetchTLE() {
+      if (!supabase) return; // demo mode: no TLE source — live ISS marker still works
       const { data } = await supabase
         .from("satellites")
         .select("tle_line1, tle_line2")
@@ -1324,7 +1747,7 @@ export default function App() {
   }, [selected]);
 
   return (
-    <div style={{ background: C.bg, width: "100%", height: "100%", overflow: "hidden", position: "relative", fontFamily: FONT }}>
+    <div style={{ background: realView ? "#000206" : C.bg, transition: "background 0.4s ease-out", width: "100%", height: "100%", overflow: "hidden", position: "relative", fontFamily: FONT }}>
       {/* Loading overlay */}
       {showOverlay && <LoadingOverlay fading={overlayFading} />}
 
@@ -1338,7 +1761,7 @@ export default function App() {
       {showWelcome && <WelcomeBanner isMobile={isMobile} visible={welcomeVisible && !welcomeExiting} />}
 
       {/* Header */}
-      <Header isMobile={isMobile} showObjectsLabel={wideHeader} loading={loading} visibleCount={visibleCount} lastSync={lastSync} onMenuClick={() => setAboutOpen(true)} onKeyClick={() => setGlobalKeyOpen(true)} />
+      <Header isMobile={isMobile} showObjectsLabel={wideHeader} loading={loading} visibleCount={visibleCount} lastSync={lastSync} simTime={simTime} onSyncTime={syncSimTime} onMenuClick={() => setAboutOpen(true)} onKeyClick={() => setGlobalKeyOpen(true)} realView={realView} onToggleView={() => setRealView(v => !v)} scope={scope} onScopeChange={setScope} />
 
       {/* About panel */}
       <About open={aboutOpen} onClose={() => setAboutOpen(false)} />
@@ -1352,9 +1775,40 @@ export default function App() {
       {/* ── DESKTOP LAYOUT ── */}
       {!isMobile && (
         <>
+          {/* MOON scope — lunar sites + orbiters replace the Earth panels */}
+          {scope === "moon" && <LunarPanel onFlyToSite={flyToSite} />}
+
+          {/* SOLAR scope — quiet hint; the model itself is the interface */}
+          {scope === "solar" && (
+            <div style={{ position: "absolute", top: 92, left: "50%", transform: "translateX(-50%)", color: `${C.cyan}55`, fontSize: 10, letterSpacing: 2, pointerEvents: "none" }}>
+              PLANETS AT REAL POSITIONS FOR SIM DATE · CLICK A PLANET TO VISIT
+            </div>
+          )}
+
+          {/* Individual planet view — compact fact card */}
+          {(() => {
+            const planet = scope !== "earth" && scope !== "moon" && scope !== "solar" ? PLANETS.find(p => p.id === scope) : null;
+            if (!planet) return null;
+            return (
+              <div className="hud-card" style={{ position: "absolute", top: 80, right: 20, width: 240, background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, padding: "16px 16px", backdropFilter: "blur(10px)" }}>
+                <div style={{ color: C.cyan, fontSize: 13, letterSpacing: 3, fontWeight: "bold", marginBottom: 12 }}>{planet.label}</div>
+                {Object.entries({ DIAMETER: planet.facts.diameter, "DAY LENGTH": planet.facts.day, "YEAR LENGTH": planet.facts.year, "ORBIT": `${planet.dist >= 9.6 ? "OUTER" : "INNER"} SYSTEM` }).map(([k, val], i) => (
+                  <div key={k} className="hud-row-in" style={{ display: "flex", justifyContent: "space-between", marginBottom: 9, animationDelay: `${i * 20}ms` }}>
+                    <span style={{ color: `${C.cyan}66`, fontSize: 10, letterSpacing: 1 }}>{k}</span>
+                    <span style={{ color: C.white, fontSize: 12 }}>{val}</span>
+                  </div>
+                ))}
+                <div onClick={() => setScope("solar")} className="hud-press" style={{ marginTop: 12, textAlign: "center", color: `${C.cyan}88`, fontSize: 10, letterSpacing: 2, cursor: "pointer", border: `1px solid ${C.cyan}33`, borderRadius: 4, padding: "6px 0" }}>
+                  ← SOLAR SYSTEM
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Left panel — filter (top 70%) + country codes (bottom 30%).
               Each section is a collapsible instrument module: header bar stays,
               content height-collapses in 180ms ease-out. */}
+          {scope === "earth" && (
           <div onWheel={e => e.stopPropagation()} className="hud-card" style={{ position: "absolute", top: 80, left: 20, width: 300, bottom: 150, background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, backdropFilter: "blur(10px)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
             <CollapsibleSection title="FILTER OBJECTS" openFlex={7} style={{ padding: "14px 14px 0" }}>
@@ -1385,8 +1839,10 @@ export default function App() {
             </CollapsibleSection>
 
           </div>
+          )}
 
           {/* Right panel — satellite viewer (top 70%) + object data (bottom 30%) */}
+          {scope === "earth" && (
           <SatelliteViewer
             sats={satsRef.current}
             focusedCodes={focusedCodes}
@@ -1401,11 +1857,13 @@ export default function App() {
             setSelectedCodes={setSelectedCodes}
             setActive={setActive}
           />
+          )}
 
           {/* Bottom center — Timeline + Speed side by side */}
           <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 10, alignItems: "stretch" }}>
 
-            {/* Timeline */}
+            {/* Timeline — Earth launch history; hidden on the Moon */}
+            {scope === "earth" && (
             <div className="hud-card" style={{ background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", minWidth: 240 }}>
               <TimelineControl
                 isMobile={false}
@@ -1418,6 +1876,7 @@ export default function App() {
                 onStepForward={stepTimelineForward}
               />
             </div>
+            )}
 
             {/* Speed Control */}
             <div className="hud-card" style={{ background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, padding: "12px 20px", backdropFilter: "blur(10px)", textAlign: "center", minWidth: 260 }}>
@@ -1428,7 +1887,13 @@ export default function App() {
               />
             </div>
 
-            {/* ISS Tracker — click to toggle */}
+            {/* Local time — sim clock in a selectable zone, with SYNC NOW */}
+            <div className="hud-card" style={{ background: `${C.bg}cc`, border: `1px solid ${C.cyan}33`, borderRadius: 8, padding: "12px 16px", backdropFilter: "blur(10px)", textAlign: "center" }}>
+              <LocalTimePanel isMobile={false} getSimTime={() => sunTimeRef.current} onSync={syncSimTime} />
+            </div>
+
+            {/* ISS Tracker — click to toggle; Earth scope only */}
+            {scope === "earth" && (
             <ISSPanel
               isMobile={false}
               issData={issData}
@@ -1438,6 +1903,7 @@ export default function App() {
               onHoverChange={setIssHover}
               onToggle={toggleISS}
             />
+            )}
           </div>
 
         </>
@@ -1494,16 +1960,20 @@ export default function App() {
               )}
 
               {mobileTab === "time" && (
-                <TimelineControl
-                  isMobile={true}
-                  timelineYear={timelineYear}
-                  setTimelineYear={setTimelineYear}
-                  currentYear={CURRENT_YEAR}
-                  timelinePlaying={timelinePlaying}
-                  onStepBack={stepTimelineBack}
-                  onTogglePlay={toggleTimelinePlay}
-                  onStepForward={stepTimelineForward}
-                />
+                <>
+                  <TimelineControl
+                    isMobile={true}
+                    timelineYear={timelineYear}
+                    setTimelineYear={setTimelineYear}
+                    currentYear={CURRENT_YEAR}
+                    timelinePlaying={timelinePlaying}
+                    onStepBack={stepTimelineBack}
+                    onTogglePlay={toggleTimelinePlay}
+                    onStepForward={stepTimelineForward}
+                  />
+                  <div style={{ borderTop: `1px solid ${C.cyan}22`, margin: "14px 0" }} />
+                  <LocalTimePanel isMobile={true} getSimTime={() => sunTimeRef.current} onSync={syncSimTime} />
+                </>
               )}
 
               {mobileTab === "speed" && (

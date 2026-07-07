@@ -1,0 +1,52 @@
+name: Nightly Performance Audit
+
+on:
+  schedule:
+    - cron: '0 7 * * *'  # 3 AM ET (7 AM UTC)
+  workflow_dispatch:
+
+# IMPORTANT: To prevent Vercel from deploying on audit commits, set the
+# "Ignored Build Step" in your Vercel project settings (Git → Ignored Build Step) to:
+#   echo "$VERCEL_GIT_COMMIT_MESSAGE" | grep -q "\[skip vercel\]" && exit 1 || exit 0
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Lighthouse
+        run: npm install -g lighthouse
+
+      - name: Run Lighthouse (desktop)
+        # Desktop preset gives realistic scores for a WebGL/Three.js app.
+        # || true prevents workflow failure when Lighthouse returns non-zero (low score).
+        run: |
+          lighthouse https://orbit-atlas.vercel.app \
+            --output json \
+            --output-path /tmp/lh-report.json \
+            --chrome-flags="--headless=new --no-sandbox --disable-gpu" \
+            --preset=desktop \
+            --only-categories=performance,accessibility,best-practices,seo \
+            --quiet || true
+
+      - name: Generate markdown report + update history
+        run: node audit/generate-report.js /tmp/lh-report.json > audit/latest-report.md
+
+      - name: Commit audit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add audit/
+          git diff --staged --quiet && echo "No changes to commit." && exit 0
+          git commit -m "chore: nightly audit $(date -u +%Y-%m-%d) [skip vercel]"
+          git push
