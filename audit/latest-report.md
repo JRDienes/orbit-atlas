@@ -1,5 +1,5 @@
 # Orbit Atlas — Nightly Performance Audit
-**Date:** 2026-07-08
+**Date:** 2026-07-09
 **URL:** https://orbit-atlas.vercel.app/
 **Mode:** Desktop (Lighthouse 13.4.0)
 
@@ -9,9 +9,9 @@
 
 | Category | Score | Trend |
 |---|---|---|
-| Performance | 58 ⚠️ |  ↑23 |
-| Accessibility | 68 ⚠️ |  → |
-| Best Practices | 100 ✅ |  → |
+| Performance | 51 ⚠️ |  ↓7 |
+| Accessibility | 70 ⚠️ |  ↑2 |
+| Best Practices | 96 ✅ |  ↓4 |
 | SEO | 100 ✅ |  → |
 
 ---
@@ -20,12 +20,12 @@
 
 | Metric | Value | Rating | Trend |
 |---|---|---|---|
-| First Contentful Paint (FCP) | 0.5 s | Good ✅ |  ↑330ms slower |
-| Largest Contentful Paint (LCP) | 1.1 s | Good ✅ |  ↓7143ms faster |
-| Total Blocking Time (TBT) | 5,220 ms | Poor ❌ |  ↓2815ms faster |
-| Cumulative Layout Shift (CLS) | 0.003 | Good ✅ |  → |
-| Speed Index | 10.0 s | Poor ❌ | |
-| Time to Interactive (TTI) | 28.6 s | Poor ❌ |  ↑19472ms slower |
+| First Contentful Paint (FCP) | 0.7 s | Good ✅ |  ↑157ms slower |
+| Largest Contentful Paint (LCP) | 2.7 s | Poor ❌ |  ↑1584ms slower |
+| Total Blocking Time (TBT) | 2,740 ms | Poor ❌ |  ↓2484ms faster |
+| Cumulative Layout Shift (CLS) | 0 | Good ✅ |  → |
+| Speed Index | 2.1 s | Needs Improvement ⚠️ | |
+| Time to Interactive (TTI) | 4.2 s | Needs Improvement ⚠️ |  ↓24412ms faster |
 | Interaction to Next Paint (INP) | N/A |  | |
 
 ---
@@ -34,18 +34,11 @@
 
 | Metric | Value |
 |---|---|
-| JS Execution Time | 2.1 s |
-| Main Thread Work | 41.6 s |
+| JS Execution Time | 2.2 s |
+| Main Thread Work | 4.4 s |
 | DOM Size | N/A |
-| Total Page Weight | Total size was 2,054 KiB |
-| Network Requests | 69 |
-
----
-
-## Opportunities (Estimated Savings)
-
-1. **Reduce unused JavaScript** — _Est savings of 142 KiB_
-   > **Source:** `orbit-atlas-web/src/components/SatVisual.js, satWorker.js (Three.js tree-shaking — import only used classes)`
+| Total Page Weight | Total size was 1,372 KiB |
+| Network Requests | 10 |
 
 ---
 
@@ -53,23 +46,21 @@
 
 | Resource Type | Transfer Size |
 |---|---|
-| Image | 1151 KB |
-| Fetch | 589 KB |
+| Image | 1059 KB |
 | Script | 301 KB |
 | Other | 9 KB |
 | Stylesheet | 1 KB |
 | Document | 1 KB |
 | Manifest | 1 KB |
-| Preflight | 0 KB |
-| **Total** | **2054 KB** |
+| Fetch | 0 KB |
+| **Total** | **1372 KB** |
 
 ---
 
 ## Accessibility Issues
 
-- [ ] **Form elements do not have associated labels** (2) — Labels ensure that form controls are announced properly by assistive technologies, like screen readers
+- [ ] **Document does not have a main landmark.** (1) — One main landmark helps screen reader users navigate a web page
 - [ ] **`[user-scalable="no"]` is used in the `<meta name="viewport">` element or the `[maximum-scale]` attribute is less than 5.** (1) — Disabling zooming is problematic for users with low vision who rely on screen magnification to properly see the contents of a web page
-- [ ] **Select elements do not have associated label elements.** (2) — Form elements without effective labels can create frustrating experiences for screen reader users
 
 ---
 
@@ -79,13 +70,19 @@
 
 ### 1. [HIGH] TBT
 
-Total Blocking Time is 5,220 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
+Total Blocking Time is 2,740 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
 
 **Files:** `orbit-atlas-web/src/satWorker.js`
 
-### 2. [HIGH] TTI
+### 2. [HIGH] LCP
 
-Time to Interactive is 28.6 s. Defer satellite worker initialization until after first paint; show the loading overlay immediately to unblock the main thread.
+LCP is 2.7 s. Add `<link rel="preload">` for the Earth texture in index.html and consider lazy-loading non-critical panels.
+
+**Files:** `orbit-atlas-web/public/index.html, orbit-atlas-web/src/App.js`
+
+### 3. [HIGH] TTI
+
+Time to Interactive is 4.2 s. Defer satellite worker initialization until after first paint; show the loading overlay immediately to unblock the main thread.
 
 **Files:** `orbit-atlas-web/src/App.js, orbit-atlas-web/src/satWorker.js`
 
