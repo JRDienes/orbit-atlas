@@ -1,5 +1,5 @@
 # Orbit Atlas — Nightly Performance Audit
-**Date:** 2026-07-14
+**Date:** 2026-07-15
 **URL:** https://orbit-atlas.vercel.app/
 **Mode:** Desktop (Lighthouse 13.4.0)
 
@@ -20,12 +20,12 @@
 
 | Metric | Value | Rating | Trend |
 |---|---|---|---|
-| First Contentful Paint (FCP) | 0.4 s | Good ✅ |  → |
-| Largest Contentful Paint (LCP) | 0.8 s | Good ✅ |  ↓96ms faster |
-| Total Blocking Time (TBT) | 4,650 ms | Poor ❌ |  → |
-| Cumulative Layout Shift (CLS) | 0.003 | Good ✅ |  → |
-| Speed Index | 9.6 s | Poor ❌ | |
-| Time to Interactive (TTI) | 28.2 s | Poor ❌ |  ↓309ms faster |
+| First Contentful Paint (FCP) | 0.3 s | Good ✅ |  ↓72ms faster |
+| Largest Contentful Paint (LCP) | 0.9 s | Good ✅ |  ↑109ms slower |
+| Total Blocking Time (TBT) | 4,070 ms | Poor ❌ |  ↓572ms faster |
+| Cumulative Layout Shift (CLS) | 0.004 | Good ✅ |  → |
+| Speed Index | 9.3 s | Poor ❌ | |
+| Time to Interactive (TTI) | 27.9 s | Poor ❌ |  ↓349ms faster |
 | Interaction to Next Paint (INP) | N/A |  | |
 
 ---
@@ -34,18 +34,11 @@
 
 | Metric | Value |
 |---|---|
-| JS Execution Time | 1.9 s |
+| JS Execution Time | 2.8 s |
 | Main Thread Work | 41.7 s |
 | DOM Size | N/A |
 | Total Page Weight | Total size was 2,070 KiB |
 | Network Requests | 69 |
-
----
-
-## Opportunities (Estimated Savings)
-
-1. **Reduce unused JavaScript** — _Est savings of 142 KiB_
-   > **Source:** `orbit-atlas-web/src/components/SatVisual.js, satWorker.js (Three.js tree-shaking — import only used classes)`
 
 ---
 
@@ -79,13 +72,13 @@
 
 ### 1. [HIGH] TBT
 
-Total Blocking Time is 4,650 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
+Total Blocking Time is 4,070 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
 
 **Files:** `orbit-atlas-web/src/satWorker.js`
 
 ### 2. [HIGH] TTI
 
-Time to Interactive is 28.2 s. Defer satellite worker initialization until after first paint; show the loading overlay immediately to unblock the main thread.
+Time to Interactive is 27.9 s. Defer satellite worker initialization until after first paint; show the loading overlay immediately to unblock the main thread.
 
 **Files:** `orbit-atlas-web/src/App.js, orbit-atlas-web/src/satWorker.js`
 
