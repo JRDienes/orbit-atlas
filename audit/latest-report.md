@@ -1,5 +1,5 @@
 # Orbit Atlas — Nightly Performance Audit
-**Date:** 2026-07-16
+**Date:** 2026-07-17
 **URL:** https://orbit-atlas.vercel.app/
 **Mode:** Desktop (Lighthouse 13.4.0)
 
@@ -9,7 +9,7 @@
 
 | Category | Score | Trend |
 |---|---|---|
-| Performance | 54 ⚠️ |  ↓5 |
+| Performance | 59 ⚠️ |  ↑5 |
 | Accessibility | 68 ⚠️ |  → |
 | Best Practices | 100 ✅ |  → |
 | SEO | 100 ✅ |  → |
@@ -20,12 +20,12 @@
 
 | Metric | Value | Rating | Trend |
 |---|---|---|---|
-| First Contentful Paint (FCP) | 0.4 s | Good ✅ |  ↑103ms slower |
-| Largest Contentful Paint (LCP) | 1.7 s | Needs Improvement ⚠️ |  ↑713ms slower |
-| Total Blocking Time (TBT) | 4,310 ms | Poor ❌ |  ↑240ms slower |
+| First Contentful Paint (FCP) | 0.3 s | Good ✅ |  ↓115ms faster |
+| Largest Contentful Paint (LCP) | 0.9 s | Good ✅ |  ↓712ms faster |
+| Total Blocking Time (TBT) | 3,970 ms | Poor ❌ |  ↓348ms faster |
 | Cumulative Layout Shift (CLS) | 0.005 | Good ✅ |  → |
-| Speed Index | 9.7 s | Poor ❌ | |
-| Time to Interactive (TTI) | 28.1 s | Poor ❌ |  ↑288ms slower |
+| Speed Index | 9.4 s | Poor ❌ | |
+| Time to Interactive (TTI) | 27.7 s | Poor ❌ |  ↓445ms faster |
 | Interaction to Next Paint (INP) | N/A |  | |
 
 ---
@@ -34,8 +34,8 @@
 
 | Metric | Value |
 |---|---|
-| JS Execution Time | 2.7 s |
-| Main Thread Work | 42.1 s |
+| JS Execution Time | 2.2 s |
+| Main Thread Work | 42.2 s |
 | DOM Size | N/A |
 | Total Page Weight | Total size was 2,070 KiB |
 | Network Requests | 69 |
@@ -79,19 +79,13 @@
 
 ### 1. [HIGH] TBT
 
-Total Blocking Time is 4,310 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
+Total Blocking Time is 3,970 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
 
 **Files:** `orbit-atlas-web/src/satWorker.js`
 
-### 2. [HIGH] Bundle / Unused JS
+### 2. [HIGH] TTI
 
-Est savings of 142 KiB potential savings from unused JavaScript. Tree-shake Three.js — import only `BufferGeometry`, `Points`, `PointsMaterial`, etc. instead of the full `three` package.
-
-**Files:** `orbit-atlas-web/src/components/SatVisual.js, orbit-atlas-web/src/satWorker.js`
-
-### 3. [HIGH] TTI
-
-Time to Interactive is 28.1 s. Defer satellite worker initialization until after first paint; show the loading overlay immediately to unblock the main thread.
+Time to Interactive is 27.7 s. Defer satellite worker initialization until after first paint; show the loading overlay immediately to unblock the main thread.
 
 **Files:** `orbit-atlas-web/src/App.js, orbit-atlas-web/src/satWorker.js`
 
