@@ -1,5 +1,5 @@
 # Orbit Atlas — Nightly Performance Audit
-**Date:** 2026-08-15
+**Date:** 2026-08-16
 **URL:** https://orbit-atlas.vercel.app/
 **Mode:** Desktop (Lighthouse 13.4.1)
 
@@ -9,7 +9,7 @@
 
 | Category | Score | Trend |
 |---|---|---|
-| Performance | 60 ⚠️ |  ↓2 |
+| Performance | 62 ⚠️ |  ↑2 |
 | Accessibility | 68 ⚠️ |  → |
 | Best Practices | 100 ✅ |  → |
 | SEO | 100 ✅ |  → |
@@ -20,12 +20,12 @@
 
 | Metric | Value | Rating | Trend |
 |---|---|---|---|
-| First Contentful Paint (FCP) | 0.3 s | Good ✅ |  ↓73ms faster |
+| First Contentful Paint (FCP) | 0.4 s | Good ✅ |  ↑70ms slower |
 | Largest Contentful Paint (LCP) | 0.7 s | Good ✅ |  → |
-| Total Blocking Time (TBT) | 4,390 ms | Poor ❌ |  ↑3390ms slower |
-| Cumulative Layout Shift (CLS) | 0.003 | Good ✅ |  → |
-| Speed Index | 9.5 s | Poor ❌ | |
-| Time to Interactive (TTI) | 28.5 s | Poor ❌ |  ↑17728ms slower |
+| Total Blocking Time (TBT) | 900 ms | Poor ❌ |  ↓3487ms faster |
+| Cumulative Layout Shift (CLS) | 0.002 | Good ✅ |  → |
+| Speed Index | 9.2 s | Poor ❌ | |
+| Time to Interactive (TTI) | 28.5 s | Poor ❌ |  ↓77ms faster |
 | Interaction to Next Paint (INP) | N/A |  | |
 
 ---
@@ -34,10 +34,10 @@
 
 | Metric | Value |
 |---|---|
-| JS Execution Time | 2.2 s |
-| Main Thread Work | 42.2 s |
+| JS Execution Time | 1.4 s |
+| Main Thread Work | 42.6 s |
 | DOM Size | N/A |
-| Total Page Weight | Total size was 2,104 KiB |
+| Total Page Weight | Total size was 2,115 KiB |
 | Network Requests | 71 |
 
 ---
@@ -54,14 +54,14 @@
 | Resource Type | Transfer Size |
 |---|---|
 | Image | 1151 KB |
-| Fetch | 639 KB |
+| Fetch | 650 KB |
 | Script | 301 KB |
 | Other | 9 KB |
 | Stylesheet | 1 KB |
 | Document | 1 KB |
 | Manifest | 1 KB |
 | Preflight | 0 KB |
-| **Total** | **2104 KB** |
+| **Total** | **2115 KB** |
 
 ---
 
@@ -79,7 +79,7 @@
 
 ### 1. [HIGH] TBT
 
-Total Blocking Time is 4,390 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
+Total Blocking Time is 900 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
 
 **Files:** `orbit-atlas-web/src/satWorker.js`
 
