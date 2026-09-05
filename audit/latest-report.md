@@ -1,5 +1,5 @@
 # Orbit Atlas — Nightly Performance Audit
-**Date:** 2026-09-04
+**Date:** 2026-09-05
 **URL:** https://orbit-atlas.vercel.app/
 **Mode:** Desktop (Lighthouse 13.4.1)
 
@@ -9,9 +9,9 @@
 
 | Category | Score | Trend |
 |---|---|---|
-| Performance | 53 ⚠️ |  ↓7 |
+| Performance | 55 ⚠️ |  ↑2 |
 | Accessibility | 68 ⚠️ |  → |
-| Best Practices | 100 ✅ |  → |
+| Best Practices | 96 ✅ |  ↓4 |
 | SEO | 100 ✅ |  → |
 
 ---
@@ -20,12 +20,12 @@
 
 | Metric | Value | Rating | Trend |
 |---|---|---|---|
-| First Contentful Paint (FCP) | 0.6 s | Good ✅ |  ↑166ms slower |
-| Largest Contentful Paint (LCP) | 1.7 s | Needs Improvement ⚠️ |  ↑874ms slower |
-| Total Blocking Time (TBT) | 6,030 ms | Poor ❌ |  ↑2538ms slower |
+| First Contentful Paint (FCP) | 0.4 s | Good ✅ |  ↓153ms faster |
+| Largest Contentful Paint (LCP) | 1.6 s | Needs Improvement ⚠️ |  ↓115ms faster |
+| Total Blocking Time (TBT) | 3,000 ms | Poor ❌ |  ↓3033ms faster |
 | Cumulative Layout Shift (CLS) | 0.002 | Good ✅ |  → |
-| Speed Index | 10.6 s | Poor ❌ | |
-| Time to Interactive (TTI) | 28.3 s | Poor ❌ |  ↓358ms faster |
+| Speed Index | 10.0 s | Poor ❌ | |
+| Time to Interactive (TTI) | 28.7 s | Poor ❌ |  ↑328ms slower |
 | Interaction to Next Paint (INP) | N/A |  | |
 
 ---
@@ -34,11 +34,11 @@
 
 | Metric | Value |
 |---|---|
-| JS Execution Time | 3.9 s |
-| Main Thread Work | 42.0 s |
+| JS Execution Time | 2.2 s |
+| Main Thread Work | 41.1 s |
 | DOM Size | N/A |
-| Total Page Weight | Total size was 2,138 KiB |
-| Network Requests | 71 |
+| Total Page Weight | Total size was 2,133 KiB |
+| Network Requests | 95 |
 
 ---
 
@@ -54,14 +54,14 @@
 | Resource Type | Transfer Size |
 |---|---|
 | Image | 1151 KB |
-| Fetch | 673 KB |
-| Script | 301 KB |
+| Fetch | 668 KB |
+| Script | 302 KB |
 | Other | 9 KB |
 | Stylesheet | 1 KB |
 | Document | 1 KB |
 | Manifest | 1 KB |
 | Preflight | 0 KB |
-| **Total** | **2138 KB** |
+| **Total** | **2133 KB** |
 
 ---
 
@@ -79,13 +79,13 @@
 
 ### 1. [HIGH] TBT
 
-Total Blocking Time is 6,030 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
+Total Blocking Time is 3,000 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
 
 **Files:** `orbit-atlas-web/src/satWorker.js`
 
 ### 2. [HIGH] TTI
 
-Time to Interactive is 28.3 s. Defer satellite worker initialization until after first paint; show the loading overlay immediately to unblock the main thread.
+Time to Interactive is 28.7 s. Defer satellite worker initialization until after first paint; show the loading overlay immediately to unblock the main thread.
 
 **Files:** `orbit-atlas-web/src/App.js, orbit-atlas-web/src/satWorker.js`
 
