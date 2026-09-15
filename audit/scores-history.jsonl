@@ -67,3 +67,4 @@
 {"date":"2026-09-12","performance":0.59,"accessibility":0.68,"bestPractices":1,"seo":1,"fcp":390.552,"lcp":978.552,"tbt":4015,"cls":0.0018047082494235765,"tti":28497.002,"totalBytes":2198584}
 {"date":"2026-09-13","performance":0.59,"accessibility":0.68,"bestPractices":1,"seo":1,"fcp":375.817,"lcp":903.817,"tbt":4144,"cls":0.0018047082494235765,"tti":29181.517,"totalBytes":2208271}
 {"date":"2026-09-14","performance":0.6,"accessibility":0.68,"bestPractices":1,"seo":1,"fcp":408.26,"lcp":795.26,"tbt":1430.0000000000002,"cls":0.001775318948282404,"tti":18516.260000000002,"totalBytes":2206815}
+{"date":"2026-09-15","performance":0.6,"accessibility":0.68,"bestPractices":1,"seo":1,"fcp":357.647,"lcp":748.6469999999999,"tbt":4330.500000000001,"cls":0.0017560561867028574,"tti":28663.297000000002,"totalBytes":2208264}
