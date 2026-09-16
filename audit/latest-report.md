@@ -1,5 +1,5 @@
 # Orbit Atlas — Nightly Performance Audit
-**Date:** 2026-09-15
+**Date:** 2026-09-16
 **URL:** https://orbit-atlas.vercel.app/
 **Mode:** Desktop (Lighthouse 13.4.1)
 
@@ -20,12 +20,12 @@
 
 | Metric | Value | Rating | Trend |
 |---|---|---|---|
-| First Contentful Paint (FCP) | 0.4 s | Good ✅ |  ↓51ms faster |
-| Largest Contentful Paint (LCP) | 0.7 s | Good ✅ |  → |
-| Total Blocking Time (TBT) | 4,330 ms | Poor ❌ |  ↑2901ms slower |
+| First Contentful Paint (FCP) | 0.4 s | Good ✅ |  → |
+| Largest Contentful Paint (LCP) | 0.8 s | Good ✅ |  ↑97ms slower |
+| Total Blocking Time (TBT) | 1,460 ms | Poor ❌ |  ↓2872ms faster |
 | Cumulative Layout Shift (CLS) | 0.002 | Good ✅ |  → |
-| Speed Index | 9.6 s | Poor ❌ | |
-| Time to Interactive (TTI) | 28.7 s | Poor ❌ |  ↑10147ms slower |
+| Speed Index | 10.0 s | Poor ❌ | |
+| Time to Interactive (TTI) | 28.4 s | Poor ❌ |  ↓298ms faster |
 | Interaction to Next Paint (INP) | N/A |  | |
 
 ---
@@ -34,8 +34,8 @@
 
 | Metric | Value |
 |---|---|
-| JS Execution Time | 1.7 s |
-| Main Thread Work | 42.2 s |
+| JS Execution Time | 2.0 s |
+| Main Thread Work | 42.5 s |
 | DOM Size | N/A |
 | Total Page Weight | Total size was 2,157 KiB |
 | Network Requests | 71 |
@@ -55,7 +55,7 @@
 |---|---|
 | Image | 1151 KB |
 | Fetch | 691 KB |
-| Script | 301 KB |
+| Script | 302 KB |
 | Other | 9 KB |
 | Stylesheet | 1 KB |
 | Document | 1 KB |
@@ -79,13 +79,13 @@
 
 ### 1. [HIGH] TBT
 
-Total Blocking Time is 4,330 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
+Total Blocking Time is 1,460 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
 
 **Files:** `orbit-atlas-web/src/satWorker.js`
 
 ### 2. [HIGH] TTI
 
-Time to Interactive is 28.7 s. Defer satellite worker initialization until after first paint; show the loading overlay immediately to unblock the main thread.
+Time to Interactive is 28.4 s. Defer satellite worker initialization until after first paint; show the loading overlay immediately to unblock the main thread.
 
 **Files:** `orbit-atlas-web/src/App.js, orbit-atlas-web/src/satWorker.js`
 
