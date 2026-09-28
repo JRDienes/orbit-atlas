@@ -80,3 +80,4 @@
 {"date":"2026-09-25","performance":0.56,"accessibility":0.68,"bestPractices":1,"seo":1,"fcp":491.597,"lcp":1669.597,"tbt":2652.5,"cls":0.0012639220150016052,"tti":3775.3469999999998,"totalBytes":1502452}
 {"date":"2026-09-26","performance":0.58,"accessibility":0.68,"bestPractices":1,"seo":1,"fcp":395.99060000000003,"lcp":1087.7178,"tbt":4183.5,"cls":0.0018629875886524822,"tti":28682.870600000002,"totalBytes":2223024}
 {"date":"2026-09-27","performance":0.59,"accessibility":0.68,"bestPractices":1,"seo":1,"fcp":415.31399999999996,"lcp":996.891,"tbt":1429,"cls":0.001743901767212445,"tti":14660.935000000001,"totalBytes":2233605}
+{"date":"2026-09-28","performance":0.59,"accessibility":0.68,"bestPractices":1,"seo":1,"fcp":334.412,"lcp":934.412,"tbt":3923,"cls":0.001911615937746257,"tti":28615.812,"totalBytes":2236607}
