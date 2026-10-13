@@ -1,5 +1,5 @@
 # Orbit Atlas — Nightly Performance Audit
-**Date:** 2026-10-12
+**Date:** 2026-10-13
 **URL:** https://orbit-atlas.vercel.app/
 **Mode:** Desktop (Lighthouse 13.5.0)
 
@@ -9,7 +9,7 @@
 
 | Category | Score | Trend |
 |---|---|---|
-| Performance | 59 ⚠️ |  ↑4 |
+| Performance | 59 ⚠️ |  → |
 | Accessibility | 68 ⚠️ |  → |
 | Best Practices | 100 ✅ |  → |
 | SEO | 100 ✅ |  → |
@@ -21,11 +21,11 @@
 | Metric | Value | Rating | Trend |
 |---|---|---|---|
 | First Contentful Paint (FCP) | 0.4 s | Good ✅ |  → |
-| Largest Contentful Paint (LCP) | 1.0 s | Good ✅ |  ↓558ms faster |
-| Total Blocking Time (TBT) | 3,450 ms | Poor ❌ |  ↓611ms faster |
+| Largest Contentful Paint (LCP) | 1.0 s | Good ✅ |  → |
+| Total Blocking Time (TBT) | 3,340 ms | Poor ❌ |  ↓117ms faster |
 | Cumulative Layout Shift (CLS) | 0.002 | Good ✅ |  → |
-| Speed Index | 9.5 s | Poor ❌ | |
-| Time to Interactive (TTI) | 28.3 s | Poor ❌ |  ↑482ms slower |
+| Speed Index | 9.8 s | Poor ❌ | |
+| Time to Interactive (TTI) | 28.3 s | Poor ❌ |  → |
 | Interaction to Next Paint (INP) | N/A |  | |
 
 ---
@@ -34,8 +34,8 @@
 
 | Metric | Value |
 |---|---|
-| JS Execution Time | 1.9 s |
-| Main Thread Work | 40.7 s |
+| JS Execution Time | 2.0 s |
+| Main Thread Work | 40.9 s |
 | DOM Size | N/A |
 | Total Page Weight | Total size was 2,201 KiB |
 | Network Requests | 70 |
@@ -72,7 +72,7 @@
 
 ### 1. [HIGH] TBT
 
-Total Blocking Time is 3,450 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
+Total Blocking Time is 3,340 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
 
 **Files:** `orbit-atlas-web/src/satWorker.js`
 
