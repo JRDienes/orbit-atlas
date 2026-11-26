@@ -1,5 +1,5 @@
 # Orbit Atlas — Nightly Performance Audit
-**Date:** 2026-11-25
+**Date:** 2026-11-26
 **URL:** https://orbit-atlas.vercel.app/
 **Mode:** Desktop (Lighthouse 13.6.0)
 
@@ -9,7 +9,7 @@
 
 | Category | Score | Trend |
 |---|---|---|
-| Performance | 60 ⚠️ |  ↑1 |
+| Performance | 60 ⚠️ |  → |
 | Accessibility | 68 ⚠️ |  → |
 | Best Practices | 100 ✅ |  → |
 | SEO | 100 ✅ |  → |
@@ -20,12 +20,12 @@
 
 | Metric | Value | Rating | Trend |
 |---|---|---|---|
-| First Contentful Paint (FCP) | 0.6 s | Good ✅ |  ↓178ms faster |
-| Largest Contentful Paint (LCP) | 0.6 s | Good ✅ |  ↓178ms faster |
-| Total Blocking Time (TBT) | 1,410 ms | Poor ❌ |  ↓248ms faster |
+| First Contentful Paint (FCP) | 0.3 s | Good ✅ |  ↓330ms faster |
+| Largest Contentful Paint (LCP) | 0.3 s | Good ✅ |  ↓330ms faster |
+| Total Blocking Time (TBT) | 5,770 ms | Poor ❌ |  ↑4361ms slower |
 | Cumulative Layout Shift (CLS) | 0.002 | Good ✅ |  → |
-| Speed Index | 8.7 s | Poor ❌ | |
-| Time to Interactive (TTI) | 26.8 s | Poor ❌ |  ↓1727ms faster |
+| Speed Index | 8.9 s | Poor ❌ | |
+| Time to Interactive (TTI) | 26.8 s | Poor ❌ |  → |
 | Interaction to Next Paint (INP) | N/A |  | |
 
 ---
@@ -34,8 +34,8 @@
 
 | Metric | Value |
 |---|---|
-| JS Execution Time | 1.4 s |
-| Main Thread Work | 40.9 s |
+| JS Execution Time | 2.3 s |
+| Main Thread Work | 40.5 s |
 | DOM Size | N/A |
 | Total Page Weight | Total size was 2,240 KiB |
 | Network Requests | 72 |
@@ -50,7 +50,7 @@
 | Fetch | 771 KB |
 | Script | 305 KB |
 | Other | 9 KB |
-| Stylesheet | 1 KB |
+| Stylesheet | 2 KB |
 | Document | 1 KB |
 | Manifest | 1 KB |
 | Preflight | 0 KB |
@@ -72,7 +72,7 @@
 
 ### 1. [HIGH] TBT
 
-Total Blocking Time is 1,410 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
+Total Blocking Time is 5,770 ms. Break large `postMessage` payloads from the satellite worker into smaller chunks so the main thread is never blocked > 50 ms.
 
 **Files:** `orbit-atlas-web/src/satWorker.js`
 
